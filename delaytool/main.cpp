@@ -239,7 +239,7 @@ std::vector<VnodePtr> Device::fromOutPort(int idx) {
     return ans;
 }
 
-class PortDelaysOQ : PortDelays {
+class OqPacket : PortDelays {
 private:
     double bp;
     bool bpReady;
@@ -247,7 +247,12 @@ private:
 
 };
 
-class PortDelaysVOQ : PortDelays {
+class VoqA : PortDelays {
+private:
+
+};
+
+class VoqB : PortDelays {
 private:
 
 };
