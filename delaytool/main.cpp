@@ -11,73 +11,75 @@ class PortDelays;
 class Port;
 class VlinkConfig;
 
-using VlinkPtr = std::shared_ptr<Vlink>;
-using VnodePtr = std::shared_ptr<Vnode>;
-using DevicePtr = std::shared_ptr<Device>;
-using PortDelaysPtr = std::shared_ptr<PortDelays>;
-using PortPtr = std::shared_ptr<Port>;
-using VlinkConfigPtr = std::shared_ptr<VlinkConfig>;
+using VlinkSp = std::unique_ptr<Vlink>;
+using VnodeSp = std::unique_ptr<Vnode>;
+using DeviceSp = std::unique_ptr<Device>;
+using PortDelaysSp = std::unique_ptr<PortDelays>;
+using PortSp = std::unique_ptr<Port>;
+using VlinkConfigSp = std::unique_ptr<VlinkConfig>;
 
 enum class Error {Success, Cycle, BadForVoq};
 
-// TODO здесь скорее всего возникнет циклич. зависимость по shared_ptr, разобраться с ней
-//  если, напр, комм-р содержит порты, то это точно shared_ptr
-//  если вк-нод ссылается на порт, то мб weak
-//  и тд по такой логике
-
-class VlinkConfig : std::enable_shared_from_this<VlinkConfig>
+class VlinkConfig
 {
 public:
     int chainMaxSize;
     double linkRate; // R
     double tick; // tau
+    std::map<int, VlinkSp> vlinks;
+    std::map<int, DeviceSp> sources;
+    std::map<int, DeviceSp> switches;
+    std::map<int, DeviceSp> dests;
+    std::map<int, std::pair<int, int>> inPortCoords; // get input port's device ID and local idx
+                                                     // by global key of corresponding duplex-port
+    std::map<int, std::pair<int, int>> outPortCoords; // get output port's device ID and local idx
+                                                      // by global key of corresponding duplex-port
 };
 
-class Vlink : std::enable_shared_from_this<Vlink>
+class Vlink
 {
 public:
-    int id;
-    VnodePtr src;
-    std::vector<VnodePtr> dst;
+    const int id;
+    const VnodeSp src;
+    std::vector<Vnode*> dst;
     double bag;
     double smax;
     double smin;
     double jit0;
-    VlinkConfigPtr config;
+    const VlinkConfig* config;
 };
 
-class Device : std::enable_shared_from_this<Device>
+class Device
 {
 public:
     enum Type {Src, Switch, Dst};
 
-    int id;
-    Type type;
+    const int id;
+    const Type type;
 
     // input ports of switch / no input ports in ES-src / one input port in ES-dst
-    std::vector<PortPtr> ports;
-    // get in port idx by port numeration from input data
-//    std::map<int, int> inPortIdx;
-    // get out port idx by port numeration from input data
-//    std::map<int, int> outPortIdx;
+    std::vector<PortSp> ports;
 
-    // vnodes coming from output port [idx]
+    // get vnodes coming from output port [idx]
     // i.e. vnodes in which prev->device == this and in-outPort == idx
-    std::vector<VnodePtr> fromOutPort(int idx);
+    std::vector<Vnode*> fromOutPort(int idx) const;
 };
 
 // INPUT PORT
-class Port : std::enable_shared_from_this<Port>
+class Port
 {
 public:
-    int idx;
-    int outPrev; // idx of output port with which this input port is connected by link
-    DevicePtr device;
-    std::map<int, VnodePtr> vnodes; // get Vnode by Vlink id
-    PortDelaysPtr delays; // delays until queuing in switch which contains this input port
+    // there's a link connecting output port outPrev of prevDevice with input port idx (this) of device
+    const int idx;
+    const int outPrev; // idx of output port with which this input port is connected by link
+    const Device* device;
+    const Device* prevDevice;
+    std::map<int, Vnode*> vnodes; // get Vnode by Vlink id
+    PortDelaysSp delays; // delays until queuing in switch which contains this input port
 };
 
-class DelayData {
+class DelayData
+{
 public:
     DelayData(): _ready(false), _dmin(-2.), _dmax(-1.), _jit(-1.) {}
     DelayData(double dmin, double jit): _ready(true), _dmin(dmin), _jit(jit), _dmax(dmin + jit) {}
@@ -103,10 +105,10 @@ private:
     bool _ready;
 };
 
-class PortDelays : std::enable_shared_from_this<PortDelays>
+class PortDelays
 {
 public:
-    PortPtr port;
+    const Port* port;
 
     void setInDelays(const std::map<int, DelayData>& delays) {
         inDelays = delays;
@@ -115,20 +117,20 @@ public:
 
     bool ready() { return _ready; }
 
-    DelayData getDelay(int vl) { return getFromMap(vl, outDelays); }
+    DelayData getDelay(int vl) const { return getFromMap(vl, outDelays); }
 
     virtual Error calcCommon(int vl) = 0;
     virtual Error calcFirst(int vl) = 0;
 
     // outDelay[vl] must have been calculated prior to call of this method
-    virtual DelayData e2eCommon(int vl) = 0;
+    virtual DelayData e2eCommon(int vl) const = 0;
 
 private:
     std::map<int, DelayData> outDelays;
     std::map<int, DelayData> inDelays;
     bool _ready;
 
-    DelayData getFromMap(int vl, const std::map<int, DelayData> delays) {
+    static DelayData getFromMap(int vl, const std::map<int, DelayData> delays) {
         auto found = delays.find(vl);
         if(found != delays.end()) {
             return found->second;
@@ -138,51 +140,29 @@ private:
         }
     }
 
-    DelayData getInDelay(int vl) { return getFromMap(vl, inDelays); }
+    DelayData getInDelay(int vl) const { return getFromMap(vl, inDelays); }
 };
 
-class Vnode : std::enable_shared_from_this<Vnode>
+class Vnode
 {
 public:
     int id;
-    VlinkPtr vl;
-    DevicePtr device;
-    VnodePtr prev;
-    std::vector<VnodePtr> next;
-    PortPtr in; // in port of this device
-    int outPrev; // idx of out port of prev device
-    // Vnodes whose delays are required to calculate delay before this vnode
-    // (i.e. vnodes which have this->outPrev among their destination out ports)
-    std::vector<VnodePtr> requiredVnodes;
+    const Vlink* vl;
+    const Port* in; // in port of this device
+    std::vector<VnodeSp> next;
+    const Vnode* prev; // (also == vnode of same Vlink from prev device's ports, which is unambiguous)
+    const Device* device; // == in->device
+    int outPrev; // == in->outPrev - idx of out port of prev device
 
-    // these two are < 0 if device->type != Device::Dst
-    double e2eMaxDelay;
-    double e2eJit;
+    // e2e-delay, used only if this->device->type == Device::Dst
+    DelayData e2e;
 
-    VlinkConfigPtr config;
+    const VlinkConfig* config;
 
 private:
 
-    // to be called in constructor
-    void requiredVnodesInit() {
-        if(device->type == Device::Src || prev->device->type == Device::Src) {
-            return;
-        }
-        for(const auto& port: prev->device->ports) {
-            for(const auto& pair: port->vnodes) {
-                auto vnode = pair.second;
-                for(const auto& next: vnode->next) {
-                    if(next->outPrev == outPrev) {
-                        requiredVnodes.push_back(vnode);
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    // prepare input delay data for calculation of delay before this vnode and calculate this delay
-    Error prepareCalc(int chainSize) {
+    // prepare input delay data for calculation of delay of this vnode AND calculate this delay
+    Error prepareCalc(int chainSize) const {
         if(chainSize > config->chainMaxSize) {
             return Error::Cycle;
         };
@@ -194,8 +174,9 @@ private:
         } else {
             Error err;
             std::map<int, DelayData> requiredDelays;
-            for(const auto& vnode: requiredVnodes) {
-                err = vnode->prepareCalc(++chainSize);
+            auto fromOutPort = device->fromOutPort(outPrev);
+            for(const auto& vnode: fromOutPort) {
+                err = vnode->prev->prepareCalc(++chainSize);
                 if(err != Error::Success) {
                     return err;
                 }
@@ -215,22 +196,20 @@ private:
     Error calcE2e() {
         Error err = prepareCalc(1);
         if(err == Error::Success) {
-            DelayData e2eData = in->delays->e2eCommon(vl->id);
-            e2eMaxDelay = e2eData.dmax();
-            e2eJit = e2eData.jit();
+            e2e = in->delays->e2eCommon(vl->id);
         }
         return err;
     }
 };
 
-std::vector<VnodePtr> Device::fromOutPort(int idx) {
-    std::vector<VnodePtr> ans;
+std::vector<Vnode*> Device::fromOutPort(int idx) const {
+    std::vector<Vnode*> ans;
     for(const auto& port: ports) {
-        for(const auto& pair: port->vnodes) {
+        for(auto pair: port->vnodes) {
             auto vnode = pair.second;
             for(const auto& next: vnode->next) {
                 if(next->outPrev == idx) {
-                    ans.push_back(next);
+                    ans.push_back(next.get());
                     break;
                 }
             }
@@ -239,7 +218,8 @@ std::vector<VnodePtr> Device::fromOutPort(int idx) {
     return ans;
 }
 
-class OqPacket : PortDelays {
+class OqPacket : PortDelays
+{
 private:
     double bp;
     bool bpReady;
@@ -247,12 +227,14 @@ private:
 
 };
 
-class VoqA : PortDelays {
+class VoqA : PortDelays
+{
 private:
 
 };
 
-class VoqB : PortDelays {
+class VoqB : PortDelays
+{
 private:
 
 };
