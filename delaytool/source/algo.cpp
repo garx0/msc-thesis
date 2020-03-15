@@ -1,3 +1,6 @@
+#include <iostream>
+#include <cstdio>
+#include <vector>
 #include "algo.h"
 
 int treeSize(const Vnode* vnode) {
