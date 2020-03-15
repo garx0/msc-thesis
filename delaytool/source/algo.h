@@ -1,11 +1,13 @@
 #pragma once
+#ifndef DELAYTOOL_ALGO_H
+#define DELAYTOOL_ALGO_H
+
 #include <iostream>
 #include <cstdio>
 #include <memory>
 #include <vector>
 #include <map>
 #include <cassert>
-#include <sstream>
 
 class Vlink;
 class Vnode;
@@ -33,7 +35,7 @@ public:
     int chainMaxSize;
     double linkRate; // R
     std::string scheme;
-    double cellSize; // sigma
+    int cellSize; // sigma
     int voqL; // for scheme == "VoqA", "VoqB"
     std::map<int, VlinkOwn> vlinks;
     std::map<int, DeviceOwn> devices; // actually, switches and dests
@@ -170,7 +172,6 @@ public:
     virtual Error calcFirst(int vl) = 0;
 
     // outDelay[vl] must have been calculated prior to call of this method
-    // todo case: path = {src, dst}? или уже учтен
     virtual DelayData e2e(int vl) const = 0;
 
 protected:
@@ -227,35 +228,7 @@ public:
 
 private:
     // prepare input delay data for calculation of delay of this vnode AND calculate this delay
-    Error prepareCalc(int chainSize) const {
-        printf("called prepareCalc on vl %d device %d\n", vl->id, device->id); // DEBUG
-        if(chainSize > config->chainMaxSize) {
-            return Error::Cycle;
-        }
-
-        if(device->type != Device::Src && prev->device->type == Device::Src) {
-            in->delays->calcFirst(vl->id);
-        } else {
-            Error err;
-            std::map<int, DelayData> requiredDelays;
-            auto fromOutPort = device->fromOutPort(outPrev);
-            for(const auto& vnode: fromOutPort) {
-                err = vnode->prev->prepareCalc(++chainSize);
-                if(err != Error::Success) {
-                    return err;
-                }
-                int vlId = vnode->vl->id;
-                requiredDelays[vlId] = vnode->in->delays->getDelay(vlId);
-                assert(vnode->in->delays->getDelay(vlId).ready());
-            }
-            in->delays->setInDelays(requiredDelays);
-            err = in->delays->calcCommon(vl->id);
-            if(err != Error::Success) {
-                return err;
-            }
-        }
-        return Error::Success;
-    }
+    Error prepareCalc(int chainSize) const;
 };
 
 class Mock : public PortDelays
@@ -401,8 +374,5 @@ template<typename TPortDelays>
 void PortDelaysFactory::AddCreator(const std::string& name) {
     creators[name] = std::make_shared<PortDelaysFactory::TCreator<TPortDelays>>();
 }
-
-#ifndef DELAYTOOL_ALGO_H
-#define DELAYTOOL_ALGO_H
 
 #endif //DELAYTOOL_ALGO_H
