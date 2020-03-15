@@ -1,9 +1,26 @@
 #include "algo.h"
 #include "tinyxml2/tinyxml2.h"
+#include "argparse/argparse.hpp"
 
-Device::Device(VlinkConfig* config, Type type, int id, const std::vector<int>& portNums)
-    : config(config), id(id), type(type)
-{
+int treeSize(const Vnode* vnode) {
+    int s = 1;
+    for(const auto& own: vnode->next) {
+        s += treeSize(own.get());
+    }
+    return s;
+}
+
+void VlinkConfig::calcChainMaxSize() {
+    // посчитать сумму размеров деревьев vnode - 1
+    int s = 0;
+    for(const auto& pair: vlinks) {
+        Vlink* vl = pair.second.get();
+        s += treeSize(vl->src.get()) - 1;
+    }
+    chainMaxSize = s;
+}
+
+void Device::AddPorts(const std::vector<int>& portNums) {
     for(int i: portNums) {
         // у нас есть только номер порта.
         ports.push_back(std::make_unique<Port>(this, i));
@@ -45,7 +62,7 @@ Port::Port(Device* device, int number)
     outPrev = prevCoords.second;
 
     prevDevice = config->getDevice(prevDeviceId);
-    delays = config->factory->Create(config->schemeType, this);
+    delays = config->factory->Create(config->scheme, this);
 }
 
 Vlink::Vlink(VlinkConfig* config, int id, std::vector<std::vector<int>> paths,
@@ -59,41 +76,52 @@ Vlink::Vlink(VlinkConfig* config, int id, std::vector<std::vector<int>> paths,
     for(const auto& path: paths) {
         assert(path[0] == srcId);
         size_t i = 0;
-        Vnode* vnode;
         Vnode* vnodeNext = src.get();
+        Vnode* vnode = vnodeNext; // unnecessary if src != nullptr
         while(vnodeNext != nullptr) {
             assert(i < path.size() - 1);
             vnode = vnodeNext;
             vnodeNext = vnode->selectNext(path[++i]);
         }
+        // vnode is initialized if make_unique didnt returned nullptr
         // now we need to add a new-made Vnode of device path[i] to vnode->next vector
         for(; i < path.size(); i++) {
             vnode->next.push_back(std::make_unique<Vnode>(this, path[i], vnode));
             vnode = vnode->next[vnode->next.size()-1].get();
         }
+        // vnode is a leaf
+        dst.push_back(vnode);
     }
 }
 
 Vnode::Vnode(Vlink* vlink, int deviceId, Vnode* prev)
     : config(vlink->config), vl(vlink),
-      prev(prev), device(vlink->config->getDevice(deviceId)), e2e()
+      prev(prev), device(vlink->config->getDevice(deviceId, prev == nullptr)), e2e()
 {
-    // find port by prev->device and config->links
-    for(auto& curPort: device->ports) {
-        if(curPort->prevDevice->id == prev->device->id) {
-            in = curPort.get();
-            outPrev = in->outPrev;
-            return;
+    if(prev != nullptr) {
+        // find port by prev->device
+        assert(!device->ports.empty());
+        for(auto& curPort: device->ports) {
+            if(curPort->prevDevice->id == prev->device->id) {
+                in = curPort.get();
+                outPrev = in->outPrev;
+                return;
+            }
         }
+        assert(false);
+    } else {
+        assert(device->type == Device::Src);
+        in = nullptr;
+        outPrev = -1;
     }
-    assert(false);
 }
 
 Error VlinkConfig::calcE2e() {
     for(auto& vlPair: vlinks) {
-        auto vl = vlPair.second.get();
+        Vlink* vl = vlPair.second.get();
         for(auto vnode: vl->dst) {
             Error err = vnode->calcE2e();
+            printf("called calcE2e on vnode\n"); // DEBUG
             if(err != Error::Success) {
                 return err;
             }
@@ -107,11 +135,12 @@ Error VlinkConfig::calcE2e() {
 
 // register Creators for all PortDelays types
 void PortDelaysFactory::RegisterAll() {
+    AddCreator<Mock>("Mock");
     AddCreator<VoqA>("VoqA");
     AddCreator<OqPacket>("OqPacket");
 }
 
-PortDelaysSp PortDelaysFactory::Create(const std::string& name, Port* port) {
+PortDelaysOwn PortDelaysFactory::Create(const std::string& name, Port* port) {
     auto found = creators.find(name);
     if(found != creators.end()) {
         return found->second->Create(port);
@@ -120,7 +149,7 @@ PortDelaysSp PortDelaysFactory::Create(const std::string& name, Port* port) {
     }
 }
 
-PortDelaysSp PortDelaysFactory::Create(const std::string& name, Port* port, bool flag) {
+PortDelaysOwn PortDelaysFactory::Create(const std::string& name, Port* port, bool flag) {
     auto found = creators.find(name);
     if(found != creators.end()) {
         return found->second->Create(port, flag);
@@ -143,14 +172,15 @@ std::vector<int> TokenizeCsv(const std::string& str) {
     return res;
 }
 
-VlinkConfigSp fromXml(tinyxml2::XMLDocument& doc) {
-    VlinkConfigSp config = std::make_unique<VlinkConfig>();
+VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme) {
+    VlinkConfigOwn config = std::make_unique<VlinkConfig>();
     auto afdxxml = doc.FirstChildElement("afdxxml");
     auto resources = afdxxml->FirstChildElement("resources");
     double cap = std::stof(resources->FirstChildElement("link")->Attribute("capacity"));
     config->linkRate = cap;
     config->cellSize = 100; // TODO
-    config->schemeType = "VoqA"; // TODO
+    config->voqL = 50;
+    config->scheme = scheme;
 
     for(auto res = resources->FirstChildElement("link");
         res != nullptr;
@@ -167,6 +197,8 @@ VlinkConfigSp fromXml(tinyxml2::XMLDocument& doc) {
         config->links[port2] = port1;
     }
 
+    std::map<int, std::vector<int>> portNums;
+
     for(auto res = resources->FirstChildElement("endSystem");
         res != nullptr;
         res = res->NextSiblingElement("endSystem"))
@@ -179,10 +211,10 @@ VlinkConfigSp fromXml(tinyxml2::XMLDocument& doc) {
         }
         int number = std::stoi(res->Attribute("number"));
         config->_portCoords[ports[0]] = {number, 0};
-        config->devices[number] = std::make_unique<Device>(config.get(), Device::Src, number, std::vector<int>());
-        config->devices[number] = std::make_unique<Device>(config.get(), Device::Dst, number, ports);
+        config->sources[number] = std::make_unique<Device>(config.get(), Device::Src, number);
+        config->devices[number] = std::make_unique<Device>(config.get(), Device::Dst, number);
+        portNums[number] = ports;
     }
-
     for(auto res = resources->FirstChildElement("switch");
         res != nullptr;
         res = res->NextSiblingElement("switch"))
@@ -192,8 +224,13 @@ VlinkConfigSp fromXml(tinyxml2::XMLDocument& doc) {
         for(size_t idx = 0; idx < ports.size(); idx++) {
             config->_portCoords[ports[idx]] = {number, idx};
         }
-        config->devices[number] = std::make_unique<Device>(config.get(), Device::Switch, number, ports);
+        config->devices[number] = std::make_unique<Device>(config.get(), Device::Switch, number);
+        portNums[number] = ports;
         printf("switch %s\n", res->Attribute("number"));
+    }
+    // add ports
+    for(auto [num, ports] : portNums) {
+        config->getDevice(num)->AddPorts(ports);
     }
 
     auto vls = afdxxml->FirstChildElement("virtualLinks");
@@ -214,54 +251,99 @@ VlinkConfigSp fromXml(tinyxml2::XMLDocument& doc) {
             paths.push_back(path);
             printf("VL %s path to %s\n", vl->Attribute("number"), pathEl->Attribute("dest"));
         }
-        int jit0 = 0; // TODO откуда взять
+        int jit0 = 0; // TODO взять из xml, если есть, иначе 0 или некоторый jmax
         config->vlinks[number] = std::make_unique<Vlink>(config.get(), number, paths, bag, smax, 1, jit0);
     }
+    config->calcChainMaxSize();
     return config;
 }
 
 bool toXml(VlinkConfig& config, tinyxml2::XMLDocument& doc) {
-    // TODO мб писать в тот же xml в качестве атрибута?
+    // TODO писать в тот же xml в качестве атрибута path
     return false; // TODO
 }
 
-int main() {tinyxml2::XMLDocument doc_in;
-    std::string file_in = "in.afdxxml";
-    std::string file_out = "out.afdxxml";
-    auto err = doc_in.LoadFile(file_in.c_str());
+std::string strToLower(const std::string& str) {
+    std::string str2 = str;
+    std::for_each(str2.begin(), str2.end(), [](char& c){
+        c = static_cast<char>(std::tolower(c));
+    });
+    return str2;
+}
+
+int main(int argc, char* argv[]) {
+    argparse::ArgumentParser program("delaytool");
+
+    program.add_argument("input")
+        .help("input xml file with network resources and virtual links");
+
+    program.add_argument("output")
+        .help("output xml file with delays of all VLs to all their destinations");
+
+    program.add_argument("-s", "--scheme")
+        .help("scheme type: voqa|voqb|oqp|oqa|oqb")
+        .default_value(std::string("Mock")) // TODO OqPacket
+        .action([](const std::string& value) {
+            static const std::map<std::string, std::string> mapping = {
+                    {"voqa", "VoqA"},
+                    {"voqb", "VoqB"},
+                    {"oqp", "OqPacket"},
+                    {"oqa", "OqA"},
+                    {"oqb", "OqB"}
+            };
+            auto found = mapping.find(strToLower(value));
+            if(found != mapping.end()) {
+                return found->second;
+            } else {
+                throw std::runtime_error("bad value of -s");
+            }
+        });
+
+    try {
+        program.parse_args(argc, argv);
+    } catch (const std::runtime_error& err) {
+        std::cout << program;
+        return 0;
+    }
+
+    std::string fileIn = program.get<std::string>("input");
+    std::string fileOut = program.get<std::string>("output");
+    std::string scheme = program.get<std::string>("--scheme");
+    tinyxml2::XMLDocument docIn;
+    auto err = docIn.LoadFile(fileIn.c_str());
     if(err) {
         std::cerr << "error opening input file: " << tinyxml2::XMLDocument::ErrorIDToName(err) << std::endl;
         return 0;
     }
-    tinyxml2::XMLDocument doc_out;
-    FILE *fp_out = fopen(file_out.c_str(), "w");
-    if(fp_out == nullptr) {
-        std::cerr << "error: cannot open " << file_out << std::endl;
+    tinyxml2::XMLDocument docOut;
+    FILE *fpOut = fopen(fileOut.c_str(), "w");
+    if(fpOut == nullptr) {
+        std::cerr << "error: cannot open " << fileOut << std::endl;
         return 0;
     }
-    VlinkConfigSp config = fromXml(doc_in);
+    VlinkConfigOwn config = fromXml(docIn, scheme);
     if(config == nullptr) {
         std::cerr << "error reading from xml" << std::endl;
-        fclose(fp_out);
+        fclose(fpOut);
         return 0;
     }
     Error calcErr = config->calcE2e();
     if(calcErr != Error::Success) {
         // TODO error info
         std::cerr << "error calculating delay: bad VL configuration" << std::endl;
-        fclose(fp_out);
+        fclose(fpOut);
         return 0;
     }
-    bool ok = toXml(*config.get(), doc_out);
+    bool ok = toXml(*config.get(), docOut);
     if(!ok) {
         std::cerr << "error converting to xml" << std::endl;
-        fclose(fp_out);
+        fclose(fpOut);
         return 0;
     }
-    err = doc_out.SaveFile(fp_out, false);
+    err = docOut.SaveFile(fpOut, false);
     if(err) {
         std::cerr << "error writing to output file: " << tinyxml2::XMLDocument::ErrorIDToName(err) << std::endl;
     }
-    fclose(fp_out);
+    fclose(fpOut);
     return 0;
 }

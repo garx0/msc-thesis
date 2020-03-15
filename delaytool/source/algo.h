@@ -15,13 +15,13 @@ class PortDelaysFactory;
 class Port;
 class VlinkConfig;
 
-using VlinkSp = std::unique_ptr<Vlink>;
-using VnodeSp = std::unique_ptr<Vnode>;
-using DeviceSp = std::unique_ptr<Device>;
-using PortDelaysSp = std::unique_ptr<PortDelays>;
-using PortSp = std::unique_ptr<Port>;
-using VlinkConfigSp = std::unique_ptr<VlinkConfig>;
-using PortDelaysFactorySp = std::unique_ptr<PortDelaysFactory>;
+using VlinkOwn = std::unique_ptr<Vlink>;
+using VnodeOwn = std::unique_ptr<Vnode>;
+using DeviceOwn = std::unique_ptr<Device>;
+using PortDelaysOwn = std::unique_ptr<PortDelays>;
+using PortOwn = std::unique_ptr<Port>;
+using VlinkConfigOwn = std::unique_ptr<VlinkConfig>;
+using PortDelaysFactoryOwn = std::unique_ptr<PortDelaysFactory>;
 
 enum class Error {Success, Cycle, BadForVoq};
 
@@ -33,15 +33,16 @@ public:
 
     int chainMaxSize;
     double linkRate; // R
-    std::string schemeType;
+    std::string scheme;
     double cellSize; // sigma
-    int voqL; // for schemeType == "VoqA", "VoqB"
-    std::map<int, VlinkSp> vlinks;
-    std::map<int, DeviceSp> devices;
+    int voqL; // for scheme == "VoqA", "VoqB"
+    std::map<int, VlinkOwn> vlinks;
+    std::map<int, DeviceOwn> devices; // actually, switches and dests
+    std::map<int, DeviceOwn> sources;
     std::map<int, std::pair<int, int>> _portCoords; // get input/output port's device ID and local idx
                                                     // by global key of corresponding duplex-port
     std::map<int, int> links;
-    PortDelaysFactorySp factory;
+    PortDelaysFactoryOwn factory;
 
     Vlink* getVlink(int id) {
         auto found = vlinks.find(id);
@@ -49,9 +50,10 @@ public:
         return found->second.get();
     }
 
-    Device* getDevice(int id) {
-        auto found = devices.find(id);
-        assert(found != devices.end());
+    Device* getDevice(int id, bool isSource = false) {
+        std::map<int, DeviceOwn>& curMap = isSource ? sources : devices;
+        auto found = curMap.find(id);
+        assert(found != curMap.end());
         return found->second.get();
     }
 
@@ -67,6 +69,8 @@ public:
         return found->second;
     }
 
+    void calcChainMaxSize();
+
 
     Error calcE2e();
 };
@@ -79,7 +83,7 @@ public:
 
     VlinkConfig* const config;
     const int id;
-    VnodeSp src;
+    VnodeOwn src;
     std::vector<Vnode*> dst;
     int bag;
     int smax;
@@ -92,14 +96,18 @@ class Device
 public:
     enum Type {Src, Switch, Dst};
 
-    Device(VlinkConfig* config, Type type, int id, const std::vector<int>& portNums);
+    Device(VlinkConfig* config, Type type, int id)
+        : config(config), id(id), type(type) {}
+
+    // called when config->_portCoords is complete
+    void AddPorts(const std::vector<int>& portNums);
 
     VlinkConfig* const config;
     const int id;
     const Type type;
 
     // input ports of switch / no input ports in ES-src / one input port in ES-dst
-    std::vector<PortSp> ports;
+    std::vector<PortOwn> ports;
 
     // get vnodes coming from output port [idx]
     // i.e. vnodes in which prev->device == this and in-outPort == idx
@@ -116,7 +124,7 @@ public:
     Device* const device;
     Device* prevDevice;
     std::map<int, Vnode*> vnodes; // get Vnode by Vlink id
-    PortDelaysSp delays; // delays until queuing in switch which contains this input port
+    PortDelaysOwn delays; // delays until queuing in switch which contains this input port
 
     Port(Device* device, int number);
 };
@@ -145,7 +153,7 @@ private:
 class PortDelays
 {
 public:
-    PortDelays(Port* port): config(port->device->config), port(port), _ready(false) {}
+    explicit PortDelays(Port* port): config(port->device->config), port(port), _ready(false) {}
 
     VlinkConfig* const config;
     Port* const port;
@@ -157,22 +165,23 @@ public:
 
     bool ready() { return _ready; }
 
-    DelayData getDelay(int vl) const { return getFromMap(vl, outDelays); }
+    DelayData getDelay(int vl) const { return getFromMap(vl, delays); }
 
     virtual Error calcCommon(int vl) = 0;
     virtual Error calcFirst(int vl) = 0;
 
     // outDelay[vl] must have been calculated prior to call of this method
-    virtual DelayData e2eCommon(int vl) const = 0;
+    // todo case: path = {src, dst}? или уже учтен
+    virtual DelayData e2e(int vl) const = 0;
 
 protected:
-    std::map<int, DelayData> outDelays;
+    std::map<int, DelayData> delays;
     std::map<int, DelayData> inDelays;
     bool _ready;
 
-    static DelayData getFromMap(int vl, const std::map<int, DelayData> delays) {
-        auto found = delays.find(vl);
-        if(found != delays.end()) {
+    static DelayData getFromMap(int vl, const std::map<int, DelayData>& delaysMap) {
+        auto found = delaysMap.find(vl);
+        if(found != delaysMap.end()) {
             return found->second;
         } else {
             std::cout << "no such vl in this port\n"; // DEBUG
@@ -191,7 +200,7 @@ public:
     VlinkConfig* const config;
     Vlink* const vl;
     Port* in; // in port of this device
-    std::vector<VnodeSp> next;
+    std::vector<VnodeOwn> next;
     Vnode* const prev; // (also == vnode of same Vlink from prev device's ports, which is unambiguous)
     Device* const device; // == in->device
 
@@ -203,15 +212,15 @@ public:
     Error calcE2e() {
         Error err = prepareCalc(1);
         if(err == Error::Success) {
-            e2e = in->delays->e2eCommon(vl->id);
+            e2e = in->delays->e2e(vl->id);
         }
         return err;
     }
 
     Vnode* selectNext(int deviceId) {
-        for(auto &sp: next) {
-            if(sp->device->id == deviceId) {
-                return sp.get();
+        for(auto &own: next) {
+            if(own->device->id == deviceId) {
+                return own.get();
             }
         }
         return nullptr;
@@ -220,13 +229,12 @@ public:
 private:
     // prepare input delay data for calculation of delay of this vnode AND calculate this delay
     Error prepareCalc(int chainSize) const {
+        printf("called prepareCalc on vl %d device %d\n", vl->id, device->id); // DEBUG
         if(chainSize > config->chainMaxSize) {
             return Error::Cycle;
         }
 
-        if(device->type == Device::Src) {
-            ;
-        } else if(prev->device->type == Device::Src) {
+        if(device->type != Device::Src && prev->device->type == Device::Src) {
             in->delays->calcFirst(vl->id);
         } else {
             Error err;
@@ -251,24 +259,77 @@ private:
     }
 };
 
+class Mock : public PortDelays
+{
+public:
+    Mock(Port* port): PortDelays(port) {}
+
+protected:
+    Error calcCommon(int vl) override {
+        // TODO
+        double dmin = 0, dmax = 0;
+        for(auto [id, delay]: inDelays) {
+            dmin += delay.dmin();
+            dmax += delay.dmax();
+        }
+        dmin += 1;
+        dmax += 2;
+        delays[vl] = DelayData(dmin, dmax-dmin);
+        return Error::Success;
+    }
+
+    Error calcFirst(int vl) override {
+        // TODO
+        delays[vl] = DelayData(0, config->getVlink(vl)->jit0);
+        return Error::Success;
+    }
+
+    DelayData e2e(int vl) const override {
+        // TODO
+        return getDelay(vl);
+    }
+};
+
+class VoqA : public PortDelays
+{
+public:
+    VoqA(Port* port): PortDelays(port) {}
+
+protected:
+    Error calcCommon(int vl) override {
+        // TODO
+        return Error::Success;
+    }
+
+    Error calcFirst(int vl) override {
+        // TODO
+        return Error::Success;
+    }
+
+    DelayData e2e(int vl) const override {
+        // TODO
+        return DelayData();
+    }
+};
+
 class OqPacket : public PortDelays
 {
 public:
-    OqPacket(Port* port, bool byTick = false)
+    explicit OqPacket(Port* port, bool byTick = false)
             : PortDelays(port), bp(-1.), bpReady(false), byTick(byTick) {}
 
 protected:
-    virtual Error calcCommon(int vl) override {
+    Error calcCommon(int vl) override {
         // TODO
         return Error::Success;
     }
 
-    virtual Error calcFirst(int vl) override {
+    Error calcFirst(int vl) override {
         // TODO
         return Error::Success;
     }
 
-    virtual DelayData e2eCommon(int vl) const override {
+    DelayData e2e(int vl) const override {
         // TODO
         return DelayData();
     }
@@ -276,27 +337,6 @@ protected:
     double bp;
     bool bpReady;
     bool byTick; // if true, Ck* are used instead of Ck
-};
-
-class VoqA : public PortDelays
-{
-public:
-    VoqA(Port* port): PortDelays(port) {}
-protected:
-    virtual Error calcCommon(int vl) override {
-        // TODO
-        return Error::Success;
-    }
-
-    virtual Error calcFirst(int vl) override {
-        // TODO
-        return Error::Success;
-    }
-
-    virtual DelayData e2eCommon(int vl) const override {
-        // TODO
-        return DelayData();
-    }
 };
 
 class PortDelaysFactory {
@@ -314,16 +354,16 @@ public:
 
         ICreator() = default;
         virtual ~ICreator() = default;
-        virtual PortDelaysSp Create(Port*) const = 0;
-        virtual PortDelaysSp Create(Port*, bool) const = 0;
+        virtual PortDelaysOwn Create(Port*) const = 0;
+        virtual PortDelaysOwn Create(Port*, bool) const = 0;
     };
 
     // class that create TPortDelays objects with its constructor arguments
     template<typename TPortDelays>
     class TCreator : public ICreator {
     public:
-        PortDelaysSp Create(Port*) const override;
-        PortDelaysSp Create(Port*, bool) const override;
+        PortDelaysOwn Create(Port*) const override;
+        PortDelaysOwn Create(Port*, bool) const override;
     };
 
     // register TCreator<TPortDelays> at specified name
@@ -332,8 +372,8 @@ public:
 
     // calls corresponding Create method of Creator registered at specified name
 
-    PortDelaysSp Create(const std::string& name, Port*);
-    PortDelaysSp Create(const std::string& name, Port*, bool);
+    PortDelaysOwn Create(const std::string& name, Port*);
+    PortDelaysOwn Create(const std::string& name, Port*, bool);
 
 private:
     using TCreatorPtr = std::shared_ptr<ICreator>;
@@ -341,7 +381,7 @@ private:
 };
 
 template<typename TPortDelays>
-PortDelaysSp PortDelaysFactory::TCreator<TPortDelays>::Create(Port* port) const {
+PortDelaysOwn PortDelaysFactory::TCreator<TPortDelays>::Create(Port* port) const {
     if constexpr (std::is_constructible_v<TPortDelays, decltype(port)>) {
         return std::make_unique<TPortDelays>(port);
     } else {
@@ -350,7 +390,7 @@ PortDelaysSp PortDelaysFactory::TCreator<TPortDelays>::Create(Port* port) const 
 }
 
 template<typename TPortDelays>
-PortDelaysSp PortDelaysFactory::TCreator<TPortDelays>::Create(Port* port, bool flag) const {
+PortDelaysOwn PortDelaysFactory::TCreator<TPortDelays>::Create(Port* port, bool flag) const {
     if constexpr (std::is_constructible_v<TPortDelays, decltype(port), decltype(flag)>) {
         return std::make_unique<TPortDelays>(port, flag);
     } else {
@@ -360,7 +400,6 @@ PortDelaysSp PortDelaysFactory::TCreator<TPortDelays>::Create(Port* port, bool f
 
 template<typename TPortDelays>
 void PortDelaysFactory::AddCreator(const std::string& name) {
-    // TODO тут выдаёт ошибку что не кастится к std::shared_ptr<ICreator> !
     creators[name] = std::make_shared<PortDelaysFactory::TCreator<TPortDelays>>();
 }
 
