@@ -90,7 +90,7 @@ Vlink::Vlink(VlinkConfig* config, int id, std::vector<std::vector<int>> paths,
             vnode = vnode->next[vnode->next.size()-1].get();
         }
         // vnode is a leaf
-        dst.push_back(vnode);
+        dst[vnode->device->id] = vnode;
     }
 }
 
@@ -119,7 +119,7 @@ Vnode::Vnode(Vlink* vlink, int deviceId, Vnode* prev)
 Error VlinkConfig::calcE2e() {
     for(auto& vlPair: vlinks) {
         Vlink* vl = vlPair.second.get();
-        for(auto vnode: vl->dst) {
+        for(auto [deviceId, vnode]: vl->dst) {
             Error err = vnode->calcE2e();
             printf("called calcE2e on vnode\n"); // DEBUG
             if(err != Error::Success) {
@@ -215,6 +215,7 @@ VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme) {
         config->devices[number] = std::make_unique<Device>(config.get(), Device::Dst, number);
         portNums[number] = ports;
     }
+
     for(auto res = resources->FirstChildElement("switch");
         res != nullptr;
         res = res->NextSiblingElement("switch"))
@@ -255,12 +256,47 @@ VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme) {
         config->vlinks[number] = std::make_unique<Vlink>(config.get(), number, paths, bag, smax, 1, jit0);
     }
     config->calcChainMaxSize();
+    printf("chainMaxSize = %d\n", config->chainMaxSize); // DEBUG
     return config;
 }
 
-bool toXml(VlinkConfig& config, tinyxml2::XMLDocument& doc) {
-    // TODO писать в тот же xml в качестве атрибута path
-    return false; // TODO
+// doc must already contain the resources and VL configuration
+// (e.g. doc used for building config)
+bool toXml(VlinkConfig* config, tinyxml2::XMLDocument& doc) {
+    auto afdxxml = doc.FirstChildElement("afdxxml");
+    auto resources = afdxxml->FirstChildElement("resources");
+    for(auto res = resources->FirstChildElement("switch");
+        res != nullptr;
+        res = res->NextSiblingElement("switch"))
+    {
+        res->SetAttribute("scheme", config->scheme.c_str());
+        if(config->scheme != "OqPacket") {
+            res->SetAttribute("cellSize", config->cellSize);
+        }
+        if(config->scheme == "VoqA" || config->scheme == "VoqB") {
+            res->SetAttribute("processingPeriod", config->voqL);
+        }
+    }
+    auto vls = afdxxml->FirstChildElement("virtualLinks");
+    for(auto vlEl = vls->FirstChildElement("virtualLink");
+        vlEl != nullptr;
+        vlEl = vlEl->NextSiblingElement("virtualLink"))
+    {
+        int number = std::stoi(vlEl->Attribute("number"));
+        Vlink* vl = config->getVlink(number);
+        for(auto path = vlEl->FirstChildElement("path");
+            path != nullptr;
+            path = path->NextSiblingElement("path"))
+        {
+            int deviceId = std::stoi(path->Attribute("dest"));
+            auto found = vl->dst.find(deviceId);
+            assert(found != vl->dst.end());
+            Vnode* vnode = found->second;
+            path->SetAttribute("maxDelay", vnode->e2e.dmax());
+            path->SetAttribute("maxJit", vnode->e2e.jit());
+        }
+    }
+    return true;
 }
 
 std::string strToLower(const std::string& str) {
@@ -309,19 +345,18 @@ int main(int argc, char* argv[]) {
     std::string fileIn = program.get<std::string>("input");
     std::string fileOut = program.get<std::string>("output");
     std::string scheme = program.get<std::string>("--scheme");
-    tinyxml2::XMLDocument docIn;
-    auto err = docIn.LoadFile(fileIn.c_str());
+    tinyxml2::XMLDocument doc;
+    auto err = doc.LoadFile(fileIn.c_str());
     if(err) {
         std::cerr << "error opening input file: " << tinyxml2::XMLDocument::ErrorIDToName(err) << std::endl;
         return 0;
     }
-    tinyxml2::XMLDocument docOut;
     FILE *fpOut = fopen(fileOut.c_str(), "w");
     if(fpOut == nullptr) {
         std::cerr << "error: cannot open " << fileOut << std::endl;
         return 0;
     }
-    VlinkConfigOwn config = fromXml(docIn, scheme);
+    VlinkConfigOwn config = fromXml(doc, scheme);
     if(config == nullptr) {
         std::cerr << "error reading from xml" << std::endl;
         fclose(fpOut);
@@ -330,17 +365,17 @@ int main(int argc, char* argv[]) {
     Error calcErr = config->calcE2e();
     if(calcErr != Error::Success) {
         // TODO error info
-        std::cerr << "error calculating delay: bad VL configuration" << std::endl;
+        std::cerr << "error calculating delay: bad VL configuration, code=" << static_cast<int>(calcErr) << std::endl;
         fclose(fpOut);
         return 0;
     }
-    bool ok = toXml(*config.get(), docOut);
+    bool ok = toXml(config.get(), doc);
     if(!ok) {
-        std::cerr << "error converting to xml" << std::endl;
+        std::cerr << "error converting output to xml" << std::endl;
         fclose(fpOut);
         return 0;
     }
-    err = docOut.SaveFile(fpOut, false);
+    err = doc.SaveFile(fpOut, false);
     if(err) {
         std::cerr << "error writing to output file: " << tinyxml2::XMLDocument::ErrorIDToName(err) << std::endl;
     }

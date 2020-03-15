@@ -28,7 +28,6 @@ enum class Error {Success, Cycle, BadForVoq};
 class VlinkConfig
 {
 public:
-    // TODO ?
     VlinkConfig(): factory(std::make_unique<PortDelaysFactory>()) {}
 
     int chainMaxSize;
@@ -83,8 +82,8 @@ public:
 
     VlinkConfig* const config;
     const int id;
-    VnodeOwn src;
-    std::vector<Vnode*> dst;
+    VnodeOwn src; // tree root
+    std::map<int, Vnode*> dst; // tree leaves, key is device id
     int bag;
     int smax;
     int smin;
