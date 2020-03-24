@@ -38,36 +38,62 @@ public:
     int cellSize; // sigma
     int voqL; // for scheme == "VoqA", "VoqB"
     std::map<int, VlinkOwn> vlinks;
-    std::map<int, DeviceOwn> devices; // actually, switches and dests
+    std::map<int, DeviceOwn> devices; // actually, only switches and dests
     std::map<int, DeviceOwn> sources;
-    std::map<int, std::pair<int, int>> _portCoords; // get input/output port's device ID and local idx
-                                                    // by global key of corresponding duplex-port
+    std::map<int, int> _portDevice; // get device ID by input/output port ID
     std::map<int, int> links;
     PortDelaysFactoryOwn factory;
 
-    Vlink* getVlink(int id) {
+    Vlink* getVlink(int id) const {
         auto found = vlinks.find(id);
         assert(found != vlinks.end());
         return found->second.get();
     }
 
-    Device* getDevice(int id, bool isSource = false) {
-        std::map<int, DeviceOwn>& curMap = isSource ? sources : devices;
+    Device* getDevice(int id, bool isSource = false) const {
+        const std::map<int, DeviceOwn>& curMap = isSource ? sources : devices;
         auto found = curMap.find(id);
         assert(found != curMap.end());
         return found->second.get();
     }
 
-    int connectedPort(int portNum) {
-        auto found = links.find(portNum);
+    int connectedPort(int portId) const {
+        auto found = links.find(portId);
         assert(found != links.end());
         return found->second;
     }
 
-    std::pair<int, int> portCoords(int portNum) {
-        auto found = _portCoords.find(portNum);
-        assert(found != _portCoords.end());
+    int portDevice(int portId) const {
+        auto found = _portDevice.find(portId);
+        assert(found != _portDevice.end());
         return found->second;
+    }
+
+    std::vector<Vlink*> getAllVlinks() const {
+        std::vector<Vlink*> res;
+        res.reserve(vlinks.size());
+        for(const auto& pair: vlinks) {
+            res.push_back(pair.second.get());
+        }
+        return res;
+    }
+
+    std::vector<Device*> getAllDevices() const {
+        std::vector<Device*> res;
+        res.reserve(devices.size());
+        for(const auto& pair: devices) {
+            res.push_back(pair.second.get());
+        }
+        return res;
+    }
+
+    std::vector<Device*> getAllSources() const {
+        std::vector<Device*> res;
+        res.reserve(sources.size());
+        for(const auto& pair: sources) {
+            res.push_back(pair.second.get());
+        }
+        return res;
     }
 
     void calcChainMaxSize();
@@ -100,34 +126,64 @@ public:
     Device(VlinkConfig* config, Type type, int id)
         : config(config), id(id), type(type) {}
 
-    // called when config->_portCoords is complete
-    void AddPorts(const std::vector<int>& portNums);
+    // called when config->_portDevices is complete
+    void AddPorts(const std::vector<int>& portIds);
 
     VlinkConfig* const config;
     const int id;
     const Type type;
 
     // input ports of switch / no input ports in ES-src / one input port in ES-dst
-    std::vector<PortOwn> ports;
+    std::map<int, PortOwn> ports;
 
-    // get vnodes coming from output port [idx]
-    // i.e. vnodes in which prev->device == this and in-outPort == idx
-    std::vector<Vnode*> fromOutPort(int idx) const;
+    Port* getPort(int portId) const {
+        auto found = ports.find(portId);
+        assert(found != ports.end());
+        return found->second.get();
+    }
+
+    std::vector<Port*> getAllPorts() const {
+        std::vector<Port*> res;
+        res.reserve(ports.size());
+        for(const auto& pair: ports) {
+            res.push_back(pair.second.get());
+        }
+        return res;
+    }
+
+    // get vnodes coming from output port by port id
+    // i.e. vnodes in which prev->device == this and in->outPrev == portId
+    std::vector<Vnode*> fromOutPort(int portId) const;
 };
 
 // INPUT PORT
 class Port
 {
 public:
-    // there's a link connecting output port outPrev of prevDevice with input port idx (this) of device
-    int idx;
-    int outPrev; // idx of output port with which this input port is connected by link
+    // there's a link connecting output port outPrev of prevDevice with input port id (this) of device
+    int id;
+    int outPrev; // id of output port with which this input port is connected by link
     Device* const device;
     Device* prevDevice;
     std::map<int, Vnode*> vnodes; // get Vnode by Vlink id
     PortDelaysOwn delays; // delays until queuing in switch which contains this input port
 
     Port(Device* device, int number);
+
+    Vnode* getVnode(int vlId) const {
+        auto found = vnodes.find(vlId);
+        assert(found != vnodes.end());
+        return found->second;
+    }
+
+    std::vector<Vnode*> getAllVnodes() const {
+        std::vector<Vnode*> res;
+        res.reserve(vnodes.size());
+        for(const auto& pair: vnodes) {
+            res.push_back(pair.second);
+        }
+        return res;
+    }
 };
 
 class DelayData
@@ -204,7 +260,7 @@ public:
     Vnode* const prev; // (also == vnode of same Vlink from prev device's ports, which is unambiguous)
     Device* const device; // == in->device
 
-    int outPrev; // == in->outPrev - idx of out port of prev device
+    int outPrev; // == in->outPrev - id of out port of prev device
 
     // e2e-delay, used only if this->device->type == Device::Dst
     DelayData e2e;
@@ -217,7 +273,7 @@ public:
         return err;
     }
 
-    Vnode* selectNext(int deviceId) {
+    Vnode* selectNext(int deviceId) const {
         for(auto &own: next) {
             if(own->device->id == deviceId) {
                 return own.get();
@@ -238,7 +294,6 @@ public:
 
 protected:
     Error calcCommon(int vl) override {
-        // TODO
         double dmin = 0, dmax = 0;
         for(auto [id, delay]: inDelays) {
             dmin += delay.dmin();
@@ -251,13 +306,11 @@ protected:
     }
 
     Error calcFirst(int vl) override {
-        // TODO
         delays[vl] = DelayData(0, config->getVlink(vl)->jit0);
         return Error::Success;
     }
 
     DelayData e2e(int vl) const override {
-        // TODO
         return getDelay(vl);
     }
 };

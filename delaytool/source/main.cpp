@@ -69,9 +69,10 @@ int main(int argc, char* argv[]) {
         fclose(fpOut);
         return 0;
     }
+    DebugInfo(config.get()); // DEBUG
     Error calcErr = config->calcE2e();
     if(calcErr != Error::Success) {
-        // TODO error info
+        // TODO verbose error info?
         std::cerr << "error calculating delay: bad VL configuration, code=" << static_cast<int>(calcErr) << std::endl;
         fclose(fpOut);
         return 0;

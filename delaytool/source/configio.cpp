@@ -59,7 +59,7 @@ VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme) {
             return nullptr;
         }
         int number = std::stoi(res->Attribute("number"));
-        config->_portCoords[ports[0]] = {number, 0};
+        config->_portDevice[ports[0]] = number;
         config->sources[number] = std::make_unique<Device>(config.get(), Device::Src, number);
         config->devices[number] = std::make_unique<Device>(config.get(), Device::Dst, number);
         portNums[number] = ports;
@@ -72,7 +72,7 @@ VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme) {
         int number = std::stoi(res->Attribute("number"));
         std::vector<int> ports = TokenizeCsv(res->Attribute("ports"));
         for(size_t idx = 0; idx < ports.size(); idx++) {
-            config->_portCoords[ports[idx]] = {number, idx};
+            config->_portDevice[ports[idx]] = number;
         }
         config->devices[number] = std::make_unique<Device>(config.get(), Device::Switch, number);
         portNums[number] = ports;
@@ -146,4 +146,59 @@ bool toXml(VlinkConfig* config, tinyxml2::XMLDocument& doc) {
         }
     }
     return true;
+}
+
+void VlinkSubTreeDebugInfo(const Vnode* vnode) {
+    printf("vnode %d, input port %d, after %d\n",
+           vnode->device->id,
+           vnode->in ? vnode->in->id : -1,
+           vnode->prev ? vnode->prev->device->id : -1);
+    for(const auto& nxt: vnode->next) {
+        VlinkSubTreeDebugInfo(nxt.get());
+    }
+}
+
+void VlinkPathDebugInfo(const Vnode* dest, const std::string& prefix) {
+    if(dest->prev != nullptr) {
+        VlinkPathDebugInfo(dest->prev, prefix);
+        printf("%sdevice %d, input port %d, prev output port %d, after %d\n",
+               prefix.c_str(), dest->device->id, dest->in->id, dest->outPrev, dest->prev->device->id);
+    } else {
+        printf("%sdevice %d, is source\n",
+               prefix.c_str(), dest->device->id);
+    }
+}
+
+void DebugInfo(const VlinkConfig* config) {
+//    for(auto vl: config->getAllVlinks()) {
+//        printf("vl %d:\n", vl->id);
+//        VlinkSubTreeDebugInfo(vl->src.get());
+//        printf("\n");
+//    }
+    for(auto vl: config->getAllVlinks()) {
+        printf("vl %d:\n", vl->id);
+        for(const auto [_, dst]: vl->dst) {
+            printf("vl %d path to dst %d:\n", dst->vl->id, dst->device->id);
+            VlinkPathDebugInfo(dst, "\t");
+            printf("\n");
+        }
+        printf("\n");
+    }
+    printf("\n");
+    for(auto device: config->getAllDevices()) {
+        printf("device %d:\n", device->id);
+        for(auto port: device->getAllPorts()) {
+            printf("\tinput port %d: vl", port->id);
+            for(auto vnode: port->getAllVnodes()) {
+                printf(" %d", vnode->vl->id);
+            }
+            printf("\n");
+            printf("\toutput port %d: vl", port->id);
+            for(auto vnode: device->fromOutPort(port->id)) {
+                printf(" %d", vnode->vl->id);
+            }
+            printf("\n");
+        }
+    }
+    printf("\n");
 }

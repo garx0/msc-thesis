@@ -14,27 +14,25 @@ int treeSize(const Vnode* vnode) {
 void VlinkConfig::calcChainMaxSize() {
     // посчитать сумму размеров деревьев vnode - 1
     int s = 0;
-    for(const auto& pair: vlinks) {
-        Vlink* vl = pair.second.get();
+    for(auto vl: getAllVlinks()) {
         s += treeSize(vl->src.get()) - 1;
     }
     chainMaxSize = s;
 }
 
-void Device::AddPorts(const std::vector<int>& portNums) {
-    for(int i: portNums) {
+void Device::AddPorts(const std::vector<int>& portIds) {
+    for(int i: portIds) {
         // у нас есть только номер порта.
-        ports.push_back(std::make_unique<Port>(this, i));
+        ports[i] = std::make_unique<Port>(this, i);
     }
 }
 
-std::vector<Vnode*> Device::fromOutPort(int idx) const {
+std::vector<Vnode*> Device::fromOutPort(int portId) const {
     std::vector<Vnode*> ans;
-    for(const auto& port: ports) {
-        for(auto pair: port->vnodes) {
-            auto vnode = pair.second;
+    for(auto port: getAllPorts()) {
+        for(auto vnode: port->getAllVnodes()) {
             for(const auto& next: vnode->next) {
-                if(next->outPrev == idx) {
+                if(next->outPrev == portId) {
                     ans.push_back(next.get());
                     break;
                 }
@@ -44,24 +42,13 @@ std::vector<Vnode*> Device::fromOutPort(int idx) const {
     return ans;
 }
 
-Port::Port(Device* device, int number)
-    : device(device)
+Port::Port(Device* device, int id)
+    : id(id), device(device)
 {
-    // calculate idx, outPrev, prevDevice by number and links and portCoords in device->config
+    // calculate outPrev, prevDevice by number and links and portDevice in device->config
     VlinkConfig* config = device->config;
-
-    // TODO может забить на индексы и сделать тоже map ports в Device
-    auto coords = config->portCoords(number);
-    int deviceId = coords.first;
-    idx = coords.second;
-    assert(deviceId == device->id);
-
-    int prevNumber = config->connectedPort(number);
-
-    auto prevCoords = config->portCoords(prevNumber);
-    int prevDeviceId = prevCoords.first;
-    outPrev = prevCoords.second;
-
+    outPrev = config->connectedPort(id);
+    int prevDeviceId = config->portDevice(outPrev);
     prevDevice = config->getDevice(prevDeviceId);
     delays = config->factory->Create(config->scheme, this);
 }
@@ -102,10 +89,12 @@ Vnode::Vnode(Vlink* vlink, int deviceId, Vnode* prev)
     if(prev != nullptr) {
         // find port by prev->device
         assert(!device->ports.empty());
-        for(auto& curPort: device->ports) {
+        for(auto curPort: device->getAllPorts()) {
+            assert(curPort->vnodes.find(vl->id) == curPort->vnodes.end()); // else Vlink has cycles by devices
             if(curPort->prevDevice->id == prev->device->id) {
-                in = curPort.get();
+                in = curPort;
                 outPrev = in->outPrev;
+                in->vnodes[vl->id] = this;
                 return;
             }
         }
@@ -128,7 +117,7 @@ Error Vnode::prepareCalc(int chainSize) const {
         Error err;
         std::map<int, DelayData> requiredDelays;
         auto fromOutPort = device->fromOutPort(outPrev);
-        for(const auto& vnode: fromOutPort) {
+        for(auto vnode: fromOutPort) {
             err = vnode->prev->prepareCalc(++chainSize);
             if(err != Error::Success) {
                 return err;
@@ -147,9 +136,8 @@ Error Vnode::prepareCalc(int chainSize) const {
 }
 
 Error VlinkConfig::calcE2e() {
-    for(auto& vlPair: vlinks) {
-        Vlink* vl = vlPair.second.get();
-        for(auto [deviceId, vnode]: vl->dst) {
+    for(auto vl: getAllVlinks()) {
+        for(auto [_, vnode]: vl->dst) {
             Error err = vnode->calcE2e();
             printf("called calcE2e on vnode\n"); // DEBUG
             if(err != Error::Success) {

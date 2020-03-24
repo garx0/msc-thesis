@@ -11,4 +11,6 @@ VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme);
 // (e.g. doc used for building config)
 bool toXml(VlinkConfig* config, tinyxml2::XMLDocument& doc);
 
+void DebugInfo(const VlinkConfig* config);
+
 #endif //DELAYTOOL_CONFIGIO_H
