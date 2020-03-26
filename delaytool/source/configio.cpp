@@ -192,13 +192,15 @@ void DebugInfo(const VlinkConfig* config) {
             auto inVnodes = port->getAllVnodes();
             if(!inVnodes.empty()) {
                 printf(" vl");
-                for(auto vnode: port->getAllVnodes()) {
+                for(auto vnode: inVnodes) {
                     printf(" %d", vnode->vl->id);
                 }
             }
             printf("\n");
             printf("\toutput port %d:", port->id);
-            Device* deviceVariant = device->type == Device::Switch ? device : config->getDevice(device->id, true);
+            Device* deviceVariant = device->type == Device::Switch
+                    ? device
+                    : config->getDevice(device->id, true);
             auto outVnodes = deviceVariant->fromOutPort(port->id);
             if(!outVnodes.empty()) {
                 printf(" vl");

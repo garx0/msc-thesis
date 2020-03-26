@@ -29,22 +29,19 @@ void Device::AddPorts(const std::vector<int>& portIds) {
 
 std::vector<Vnode*> Device::fromOutPort(int portId) const {
     std::vector<Vnode*> ans;
-    if(type != Device::Src) {
-        for(auto port: getAllPorts()) {
-            for(auto vnode: port->getAllVnodes()) {
-                for(const auto &next: vnode->next) {
-                    if(next->outPrev == portId) {
-                        ans.push_back(next.get());
-                        break;
-                    }
+    for(auto port: getAllPorts()) {
+        for(auto vnode: port->getAllVnodes()) {
+            for(const auto &next: vnode->next) {
+                if(next->outPrev == portId) {
+                    ans.push_back(next.get());
+                    break;
                 }
             }
         }
-    } else {
-        for(auto vl: sourceFor) {
-            assert(vl->src->next.size() == 1);
-            ans.push_back(vl->src->next[0].get());
-        }
+    }
+    for(auto vl: sourceFor) {
+        assert(vl->src->next.size() == 1);
+        ans.push_back(vl->src->next[0].get());
     }
     return ans;
 }
