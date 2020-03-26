@@ -161,8 +161,8 @@ void VlinkSubTreeDebugInfo(const Vnode* vnode) {
 void VlinkPathDebugInfo(const Vnode* dest, const std::string& prefix) {
     if(dest->prev != nullptr) {
         VlinkPathDebugInfo(dest->prev, prefix);
-        printf("%sdevice %d, input port %d, prev output port %d, after %d\n",
-               prefix.c_str(), dest->device->id, dest->in->id, dest->outPrev, dest->prev->device->id);
+        printf("%sdevice %d, prev output port %d, input port %d, after %d\n",
+               prefix.c_str(), dest->device->id, dest->outPrev, dest->in->id, dest->prev->device->id);
     } else {
         printf("%sdevice %d, is source\n",
                prefix.c_str(), dest->device->id);
@@ -188,14 +188,23 @@ void DebugInfo(const VlinkConfig* config) {
     for(auto device: config->getAllDevices()) {
         printf("device %d:\n", device->id);
         for(auto port: device->getAllPorts()) {
-            printf("\tinput port %d: vl", port->id);
-            for(auto vnode: port->getAllVnodes()) {
-                printf(" %d", vnode->vl->id);
+            printf("\tinput port %d:", port->id);
+            auto inVnodes = port->getAllVnodes();
+            if(!inVnodes.empty()) {
+                printf(" vl");
+                for(auto vnode: port->getAllVnodes()) {
+                    printf(" %d", vnode->vl->id);
+                }
             }
             printf("\n");
-            printf("\toutput port %d: vl", port->id);
-            for(auto vnode: device->fromOutPort(port->id)) {
-                printf(" %d", vnode->vl->id);
+            printf("\toutput port %d:", port->id);
+            Device* deviceVariant = device->type == Device::Switch ? device : config->getDevice(device->id, true);
+            auto outVnodes = deviceVariant->fromOutPort(port->id);
+            if(!outVnodes.empty()) {
+                printf(" vl");
+                for(auto vnode: outVnodes) {
+                    printf(" %d", vnode->vl->id);
+                }
             }
             printf("\n");
         }

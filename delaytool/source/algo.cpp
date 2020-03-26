@@ -29,14 +29,21 @@ void Device::AddPorts(const std::vector<int>& portIds) {
 
 std::vector<Vnode*> Device::fromOutPort(int portId) const {
     std::vector<Vnode*> ans;
-    for(auto port: getAllPorts()) {
-        for(auto vnode: port->getAllVnodes()) {
-            for(const auto& next: vnode->next) {
-                if(next->outPrev == portId) {
-                    ans.push_back(next.get());
-                    break;
+    if(type != Device::Src) {
+        for(auto port: getAllPorts()) {
+            for(auto vnode: port->getAllVnodes()) {
+                for(const auto &next: vnode->next) {
+                    if(next->outPrev == portId) {
+                        ans.push_back(next.get());
+                        break;
+                    }
                 }
             }
+        }
+    } else {
+        for(auto vl: sourceFor) {
+            assert(vl->src->next.size() == 1);
+            ans.push_back(vl->src->next[0].get());
         }
     }
     return ans;
@@ -60,6 +67,7 @@ Vlink::Vlink(VlinkConfig* config, int id, std::vector<std::vector<int>> paths,
     assert(!paths.empty() && paths[0].size() >= 2);
     int srcId = paths[0][0];
     src = std::make_unique<Vnode>(this, srcId, nullptr);
+    src->device->sourceFor.push_back(this);
 
     for(const auto& path: paths) {
         assert(path[0] == srcId);

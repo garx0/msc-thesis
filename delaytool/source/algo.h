@@ -134,7 +134,9 @@ public:
     const Type type;
 
     // input ports of switch / no input ports in ES-src / one input port in ES-dst
-    std::map<int, PortOwn> ports;
+    std::map<int, PortOwn> ports; // empty if type == Src
+    // Vlinks which have this device as source
+    std::vector<Vlink*> sourceFor; // not empty only if type == Src
 
     Port* getPort(int portId) const {
         auto found = ports.find(portId);
