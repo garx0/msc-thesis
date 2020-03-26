@@ -89,7 +89,7 @@ Vlink::Vlink(VlinkConfig* config, int id, std::vector<std::vector<int>> paths,
 
 Vnode::Vnode(Vlink* vlink, int deviceId, Vnode* prev)
     : config(vlink->config), vl(vlink),
-      prev(prev), device(vlink->config->getDevice(deviceId, prev == nullptr)), e2e()
+      prev(prev), device(vlink->config->getDevice(deviceId)), e2e()
 {
     if(prev != nullptr) {
         // find port by prev->device
@@ -110,29 +110,31 @@ Vnode::Vnode(Vlink* vlink, int deviceId, Vnode* prev)
     }
 }
 
-Error Vnode::prepareCalc(int chainSize) const {
-    printf("called prepareCalc on vl %d device %d\n", vl->id, device->id); // DEBUG
+Error Vnode::prepareCalc(int chainSize, std::string debugPrefix) const { // prefix for DEBUG
     if(chainSize > config->chainMaxSize) {
         return Error::Cycle;
     }
-
-    if(device->type != Device::Src && prev->device->type == Device::Src) {
-        in->delays->calcFirst(vl->id);
+    assert(prev != nullptr);
+    if(prev->prev == nullptr) {
+        in->delays->calc(vl->id, true);
     } else {
         Error err;
         std::map<int, DelayData> requiredDelays;
-        auto fromOutPort = device->fromOutPort(outPrev);
-        for(auto vnode: fromOutPort) {
-            err = vnode->prev->prepareCalc(++chainSize);
+        auto fromOutPort = prev->device->fromOutPort(outPrev);
+        for(auto nextToCur: fromOutPort) {
+            auto curVnode = nextToCur->prev;
+            printf("%svl %d-%d calling prepareCalc on vl %d-%d\n",
+                   debugPrefix.c_str(), vl->id, device->id, curVnode->vl->id, curVnode->device->id); // DEBUG
+            err = curVnode->prepareCalc(++chainSize, debugPrefix+"\t");
             if(err != Error::Success) {
                 return err;
             }
-            int vlId = vnode->vl->id;
-            requiredDelays[vlId] = vnode->in->delays->getDelay(vlId);
-            assert(vnode->in->delays->getDelay(vlId).ready());
+            int vlId = curVnode->vl->id;
+            requiredDelays[vlId] = curVnode->in->delays->getDelay(vlId);
+            assert(curVnode->in->delays->getDelay(vlId).ready());
         }
         in->delays->setInDelays(requiredDelays);
-        err = in->delays->calcCommon(vl->id);
+        err = in->delays->calc(vl->id);
         if(err != Error::Success) {
             return err;
         }
@@ -143,8 +145,8 @@ Error Vnode::prepareCalc(int chainSize) const {
 Error VlinkConfig::calcE2e() {
     for(auto vl: getAllVlinks()) {
         for(auto [_, vnode]: vl->dst) {
+            printf("\ncalling calcE2e on vlink %d device %d\n", vl->id, vnode->device->id); // DEBUG
             Error err = vnode->calcE2e();
-            printf("called calcE2e on vnode\n"); // DEBUG
             if(err != Error::Success) {
                 return err;
             }

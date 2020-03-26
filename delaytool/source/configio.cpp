@@ -60,8 +60,7 @@ VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme) {
         }
         int number = std::stoi(res->Attribute("number"));
         config->_portDevice[ports[0]] = number;
-        config->sources[number] = std::make_unique<Device>(config.get(), Device::Src, number);
-        config->devices[number] = std::make_unique<Device>(config.get(), Device::Dst, number);
+        config->devices[number] = std::make_unique<Device>(config.get(), Device::End, number);
         portNums[number] = ports;
     }
 
@@ -71,8 +70,8 @@ VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme) {
     {
         int number = std::stoi(res->Attribute("number"));
         std::vector<int> ports = TokenizeCsv(res->Attribute("ports"));
-        for(size_t idx = 0; idx < ports.size(); idx++) {
-            config->_portDevice[ports[idx]] = number;
+        for(auto portId: ports) {
+            config->_portDevice[portId] = number;
         }
         config->devices[number] = std::make_unique<Device>(config.get(), Device::Switch, number);
         portNums[number] = ports;
@@ -198,10 +197,7 @@ void DebugInfo(const VlinkConfig* config) {
             }
             printf("\n");
             printf("\toutput port %d:", port->id);
-            Device* deviceVariant = device->type == Device::Switch
-                    ? device
-                    : config->getDevice(device->id, true);
-            auto outVnodes = deviceVariant->fromOutPort(port->id);
+            auto outVnodes = device->fromOutPort(port->id);
             if(!outVnodes.empty()) {
                 printf(" vl");
                 for(auto vnode: outVnodes) {

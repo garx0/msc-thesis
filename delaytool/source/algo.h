@@ -38,8 +38,7 @@ public:
     int cellSize; // sigma
     int voqL; // for scheme == "VoqA", "VoqB"
     std::map<int, VlinkOwn> vlinks;
-    std::map<int, DeviceOwn> devices; // actually, only switches and dests
-    std::map<int, DeviceOwn> sources;
+    std::map<int, DeviceOwn> devices;
     std::map<int, int> _portDevice; // get device ID by input/output port ID
     std::map<int, int> links;
     PortDelaysFactoryOwn factory;
@@ -50,10 +49,9 @@ public:
         return found->second.get();
     }
 
-    Device* getDevice(int id, bool isSource = false) const {
-        const std::map<int, DeviceOwn>& curMap = isSource ? sources : devices;
-        auto found = curMap.find(id);
-        assert(found != curMap.end());
+    Device* getDevice(int id) const {
+        auto found = devices.find(id);
+        assert(found != devices.end());
         return found->second.get();
     }
 
@@ -87,17 +85,7 @@ public:
         return res;
     }
 
-    std::vector<Device*> getAllSources() const {
-        std::vector<Device*> res;
-        res.reserve(sources.size());
-        for(const auto& pair: sources) {
-            res.push_back(pair.second.get());
-        }
-        return res;
-    }
-
     void calcChainMaxSize();
-
 
     Error calcE2e();
 };
@@ -121,7 +109,7 @@ public:
 class Device
 {
 public:
-    enum Type {Src, Switch, Dst};
+    enum Type {Switch, End};
 
     Device(VlinkConfig* config, Type type, int id)
         : config(config), id(id), type(type) {}
@@ -133,11 +121,9 @@ public:
     const int id;
     const Type type;
 
-    // input ports of switch / no input ports in ES-src / one input port in ES-dst
-    std::map<int, PortOwn> ports; // empty if type == Src
 
-    // Vlinks which have this device as source
-    std::vector<Vlink*> sourceFor; // not empty only if type == Src
+    std::map<int, PortOwn> ports; // input ports
+    std::vector<Vlink*> sourceFor; // Vlinks which have this device as source
 
     Port* getPort(int portId) const {
         auto found = ports.find(portId);
@@ -227,13 +213,25 @@ public:
 
     DelayData getDelay(int vl) const { return getFromMap(vl, delays); }
 
-    virtual Error calcCommon(int vl) = 0;
-    virtual Error calcFirst(int vl) = 0;
+    Error calc(int vl, bool first = false) {
+        if(delays[vl].ready()) {
+            return Error::Success;
+        }
+//        printf("---- calculating for vl %d device %d input port %d\n", vl, port->device->id, port->id); // DEBUG
+        if(!first) {
+            return calcCommon(vl);
+        } else {
+            return calcFirst(vl);
+        }
+    }
 
     // outDelay[vl] must have been calculated prior to call of this method
     virtual DelayData e2e(int vl) const = 0;
 
 protected:
+    virtual Error calcCommon(int vl) = 0;
+    virtual Error calcFirst(int vl) = 0;
+
     std::map<int, DelayData> delays;
     std::map<int, DelayData> inDelays;
     bool _ready;
@@ -287,13 +285,17 @@ public:
 
 private:
     // prepare input delay data for calculation of delay of this vnode AND calculate this delay
-    Error prepareCalc(int chainSize) const;
+    Error prepareCalc(int chainSize, std::string debugPrefix = "") const; // DEBUG in signature
 };
 
 class Mock : public PortDelays
 {
 public:
     Mock(Port* port): PortDelays(port) {}
+
+    DelayData e2e(int vl) const override {
+        return getDelay(vl);
+    }
 
 protected:
     Error calcCommon(int vl) override {
@@ -312,16 +314,17 @@ protected:
         delays[vl] = DelayData(0, config->getVlink(vl)->jit0);
         return Error::Success;
     }
-
-    DelayData e2e(int vl) const override {
-        return getDelay(vl);
-    }
 };
 
 class VoqA : public PortDelays
 {
 public:
     VoqA(Port* port): PortDelays(port) {}
+
+    DelayData e2e(int vl) const override {
+        // TODO
+        return DelayData();
+    }
 
 protected:
     Error calcCommon(int vl) override {
@@ -332,11 +335,6 @@ protected:
     Error calcFirst(int vl) override {
         // TODO
         return Error::Success;
-    }
-
-    DelayData e2e(int vl) const override {
-        // TODO
-        return DelayData();
     }
 };
 
@@ -346,6 +344,11 @@ public:
     explicit OqPacket(Port* port, bool byTick = false)
             : PortDelays(port), bp(-1.), bpReady(false), byTick(byTick) {}
 
+    DelayData e2e(int vl) const override {
+        // TODO
+        return DelayData();
+    }
+
 protected:
     Error calcCommon(int vl) override {
         // TODO
@@ -357,11 +360,7 @@ protected:
         return Error::Success;
     }
 
-    DelayData e2e(int vl) const override {
-        // TODO
-        return DelayData();
-    }
-
+private:
     double bp;
     bool bpReady;
     bool byTick; // if true, Ck* are used instead of Ck
