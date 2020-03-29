@@ -33,9 +33,9 @@ public:
     VlinkConfig(): factory(std::make_unique<PortDelaysFactory>()) {}
 
     int chainMaxSize;
-    double linkRate; // R
+    int64_t linkRate; // in byte/ms
     std::string scheme;
-    int cellSize; // sigma
+    int cellSize; // sigma, bytes
     int voqL; // for scheme == "VoqA", "VoqB"
     std::map<int, VlinkOwn> vlinks;
     std::map<int, DeviceOwn> devices;
@@ -88,6 +88,10 @@ public:
     void calcChainMaxSize();
 
     Error calcE2e();
+
+    double linkByte2ms(int64_t linkByte) {
+        return static_cast<double>(linkByte) / linkRate;
+    }
 };
 
 class Vlink
@@ -100,10 +104,12 @@ public:
     const int id;
     VnodeOwn src; // tree root
     std::map<int, Vnode*> dst; // tree leaves, key is device id
-    int bag;
-    int smax;
-    int smin;
-    double jit0;
+    int bag; // in ms
+    int64_t bagB; // in link-bytes, == bag * config->linkRate)
+    int smax; // in bytes
+    int smin; // in bytes
+    double jit0; // jitter of start of packet transfer from source end system, in ms
+    int64_t jit0b; // in link-bytes, == ceil(jit0 * config->linkRate)
 };
 
 class Device
@@ -175,24 +181,25 @@ public:
     }
 };
 
+// time is measured in bytes through link = (time in ms) * (link rate in byte/ms) / (1 byte)
 class DelayData
 {
 public:
-    DelayData(): _dmin(-2.), _jit(-1.), _dmax(-1.), _ready(false) {}
-    DelayData(double dmin, double jit): _dmin(dmin), _jit(jit), _dmax(dmin + jit), _ready(true) {}
+    DelayData(): _dmin(-2), _jit(-1), _dmax(-1), _ready(false) {}
+    DelayData(int64_t dmin, int64_t jit): _dmin(dmin), _jit(jit), _dmax(dmin + jit), _ready(true) {}
 
     bool ready() const { return _ready; }
 
-    double dmin() const { return _ready ? _dmin : -1.; }
+    int64_t dmin() const { return _ready ? _dmin : -1; }
 
-    double jit() const { return _ready ? _jit : -1.; }
+    int64_t jit() const { return _ready ? _jit : -1; }
 
-    double dmax() const { return _ready ? _dmax : -1.; }
+    int64_t dmax() const { return _ready ? _dmax : -1; }
 
 private:
-    double _dmin;
-    double _jit;
-    double _dmax;
+    int64_t _dmin;
+    int64_t _jit;
+    int64_t _dmax;
     bool _ready;
 };
 
@@ -204,8 +211,8 @@ public:
     VlinkConfig* const config;
     Port* const port;
 
-    void setInDelays(const std::map<int, DelayData>& delays) {
-        inDelays = delays;
+    void setInDelays(const std::map<int, DelayData>& values) {
+        inDelays = values;
         _ready = true;
     }
 
@@ -293,49 +300,98 @@ class Mock : public PortDelays
 public:
     Mock(Port* port): PortDelays(port) {}
 
-    DelayData e2e(int vl) const override {
-        return getDelay(vl);
-    }
+    DelayData e2e(int vl) const override;
 
 protected:
-    Error calcCommon(int vl) override {
-        double dmin = 0, dmax = 0;
-        for(auto [id, delay]: inDelays) {
-            dmin += delay.dmin();
-            dmax += delay.dmax();
-        }
-        dmin += 1;
-        dmax += 2;
-        delays[vl] = DelayData(dmin, dmax-dmin);
-        return Error::Success;
+    Error calcCommon(int vl) override;
+
+    Error calcFirst(int vl) override;
+};
+
+class defaultIntMap : public std::map<int, int> {
+public:
+    defaultIntMap() = default;
+
+    int Get(int key) {
+        auto found = find(key);
+        return found == end() ? 0 : found->second;
     }
 
-    Error calcFirst(int vl) override {
-        delays[vl] = DelayData(0, config->getVlink(vl)->jit0);
-        return Error::Success;
+    void Inc(int key, int val) {
+        auto found = find(key);
+        if(found == end()) {
+            (*this)[key] = val;
+        } else {
+            (*this)[key] += val;
+        }
     }
 };
 
-class VoqA : public PortDelays
+class Voq : public PortDelays
 {
 public:
-    VoqA(Port* port): PortDelays(port) {}
+    Voq(Port* port): PortDelays(port), outPrevLoadSum(0) {}
 
-    DelayData e2e(int vl) const override {
-        // TODO
-        return DelayData();
-    }
+    static Error completeCheck(Device *device);
 
 protected:
-    Error calcCommon(int vl) override {
-        // TODO
-        return Error::Success;
+    // C_l values by l on prev switch
+    defaultIntMap vlinkLoad;
+
+    // C_pj values by p on prev switch, where j ~ this->port->outPrev
+    defaultIntMap outPrevLoad;
+
+    // sum of outPrevLoad values
+    int outPrevLoadSum;
+
+    void calcOutPrevLoad() {
+        calcVlinkLoad();
+        Device* prevSwitch = nullptr;
+        for(auto [vlId, load]: vlinkLoad) {
+            prevSwitch = port->vnodes[vlId]->prev->device;
+            assert(prevSwitch->type == Device::Switch);
+            break;
+        }
+        for(auto [vlId, load]: vlinkLoad) {
+            Vnode *prevNode = port->vnodes[vlId]->prev;
+            assert(prevNode->device->id == prevSwitch->id);
+            outPrevLoad.Inc(prevNode->in->id, load);
+            outPrevLoadSum += load;
+            break;
+        }
     }
 
-    Error calcFirst(int vl) override {
-        // TODO
-        return Error::Success;
-    }
+    virtual void calcVlinkLoad() = 0;
+};
+
+class VoqA : public Voq
+{
+public:
+    VoqA(Port* port): Voq(port) {}
+
+    DelayData e2e(int vl) const override;
+
+protected:
+    void calcVlinkLoad() override;
+
+    Error calcCommon(int vl) override;
+
+    Error calcFirst(int vl) override;
+};
+
+class VoqB : public Voq
+{
+public:
+    VoqB(Port* port): Voq(port) {}
+
+    DelayData e2e(int vl) const override;
+
+protected:
+    void calcVlinkLoad() override;
+
+    Error calcCommon(int vl) override;
+
+    Error calcFirst(int vl) override;
 };
 
 class OqPacket : public PortDelays
@@ -344,21 +400,12 @@ public:
     explicit OqPacket(Port* port, bool byTick = false)
             : PortDelays(port), bp(-1.), bpReady(false), byTick(byTick) {}
 
-    DelayData e2e(int vl) const override {
-        // TODO
-        return DelayData();
-    }
+    DelayData e2e(int vl) const override;
 
 protected:
-    Error calcCommon(int vl) override {
-        // TODO
-        return Error::Success;
-    }
+    Error calcCommon(int vl) override;
 
-    Error calcFirst(int vl) override {
-        // TODO
-        return Error::Success;
-    }
+    Error calcFirst(int vl) override;
 
 private:
     double bp;

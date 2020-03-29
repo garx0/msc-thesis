@@ -1,6 +1,7 @@
 #include <iostream>
 #include <cstdio>
 #include <vector>
+#include <cmath>
 #include "algo.h"
 
 int treeSize(const Vnode* vnode) {
@@ -59,7 +60,8 @@ Port::Port(Device* device, int id)
 
 Vlink::Vlink(VlinkConfig* config, int id, std::vector<std::vector<int>> paths,
     int bag, int smax, int smin, double jit0)
-    : config(config), id(id), bag(bag), smax(smax), smin(smin), jit0(jit0)
+    : config(config), id(id), bag(bag), bagB(bag * config->linkRate),
+    smax(smax), smin(smin), jit0(jit0), jit0b(std::ceil(jit0 * config->linkRate))
 {
     assert(!paths.empty() && paths[0].size() >= 2);
     int srcId = paths[0][0];
@@ -110,7 +112,7 @@ Vnode::Vnode(Vlink* vlink, int deviceId, Vnode* prev)
     }
 }
 
-Error Vnode::prepareCalc(int chainSize, std::string debugPrefix) const { // prefix for DEBUG
+Error Vnode::prepareCalc(int chainSize, std::string debugPrefix) const { // DEBUG in signature
     if(chainSize > config->chainMaxSize) {
         return Error::Cycle;
     }
@@ -151,8 +153,22 @@ Error VlinkConfig::calcE2e() {
                 return err;
             }
             DelayData e2e = vnode->e2e; // DEBUG
-            printf("VL %d to %d: maxDelay = %f, jit = %f\n",
-                    vl->id, vnode->device->id, e2e.dmax(), e2e.jit()); // DEBUG
+            printf("VL %d to %d: maxDelay = %li lB (%.1f us), jit = %li lB (%.1f us)\n",
+                    vl->id, vnode->device->id,
+                    e2e.dmax(), linkByte2ms(e2e.dmax()) * 1e3,
+                    e2e.jit(), linkByte2ms(e2e.jit()) * 1e3); // DEBUG
+        }
+    }
+    if(scheme == "voqa" || scheme == "voqb") {
+        for(auto device: getAllDevices()) {
+            // проверить суммы по входным портам коммутатора
+            if(device->type != Device::Switch) {
+                continue;
+            }
+            Error err = Voq::completeCheck(device);
+            if(err != Error::Success) {
+                return err;
+            }
         }
     }
     return Error::Success;
@@ -162,6 +178,7 @@ Error VlinkConfig::calcE2e() {
 void PortDelaysFactory::RegisterAll() {
     AddCreator<Mock>("Mock");
     AddCreator<VoqA>("VoqA");
+    AddCreator<VoqB>("VoqB");
     AddCreator<OqPacket>("OqPacket");
 }
 
