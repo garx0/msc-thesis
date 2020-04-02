@@ -25,7 +25,7 @@ using PortOwn = std::unique_ptr<Port>;
 using VlinkConfigOwn = std::unique_ptr<VlinkConfig>;
 using PortDelaysFactoryOwn = std::unique_ptr<PortDelaysFactory>;
 
-enum class Error {Success, Cycle, BadForVoq};
+enum class Error {Success, Cycle, BadForVoq, BpDiverge};
 
 class VlinkConfig
 {
@@ -330,7 +330,7 @@ public:
 class Voq : public PortDelays
 {
 public:
-    Voq(Port* port): PortDelays(port), outPrevLoadSum(0) {}
+    Voq(Port* port): PortDelays(port), outPrevLoadSum(0), loadReady(false) {}
 
     static Error completeCheck(Device *device);
 
@@ -344,7 +344,13 @@ protected:
     // sum of outPrevLoad values
     int outPrevLoadSum;
 
+    // is information about input load (outPrevLoad and its sum) ready
+    bool loadReady;
+
     void calcOutPrevLoad() {
+        if(loadReady) {
+            return;
+        }
         calcVlinkLoad();
         Device* prevSwitch = nullptr;
         for(auto [vlId, load]: vlinkLoad) {
@@ -359,6 +365,7 @@ protected:
             outPrevLoadSum += load;
             break;
         }
+        loadReady = true;
     }
 
     virtual void calcVlinkLoad() = 0;
@@ -367,7 +374,7 @@ protected:
 class VoqA : public Voq
 {
 public:
-    VoqA(Port* port): Voq(port) {}
+    explicit VoqA(Port* port): Voq(port) {}
 
     DelayData e2e(int vl) const override;
 
@@ -382,7 +389,7 @@ protected:
 class VoqB : public Voq
 {
 public:
-    VoqB(Port* port): Voq(port) {}
+    explicit VoqB(Port* port): Voq(port) { }
 
     DelayData e2e(int vl) const override;
 
@@ -398,19 +405,27 @@ class OqPacket : public PortDelays
 {
 public:
     explicit OqPacket(Port* port, bool byTick = false)
-            : PortDelays(port), bp(-1.), bpReady(false), byTick(byTick) {}
+    : PortDelays(port), bp(-1), byTick(byTick),
+      delayFuncRemConstPart(-1) {}
 
     DelayData e2e(int vl) const override;
 
 protected:
+
+    // == Rk,j(t) - Jk, k == curVlId
+    int64_t delayFunc(int64_t t, int curVlId) const;
+
+    // == Rk,j(q)* - Jk, k == curVlId
+    int64_t delayFuncRem(int q, int curVlId);
+
     Error calcCommon(int vl) override;
 
     Error calcFirst(int vl) override;
 
 private:
-    double bp;
-    bool bpReady;
+    int64_t bp;
     bool byTick; // if true, Ck* are used instead of Ck
+    int64_t delayFuncRemConstPart;
 };
 
 class PortDelaysFactory {

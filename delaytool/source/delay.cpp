@@ -200,17 +200,111 @@ DelayData VoqB::e2e(int vlId) const {
     return DelayData(dmin, dmax - dmin);
 }
 
-Error OqPacket::calcCommon(int vlId) {
-    // TODO
+int64_t busyPeriod(const std::map<int, DelayData>& inDelays, VlinkConfig* config, bool byTick = false) {
+    static int64_t maxIt = 10000;
+    int it = 0;
+    int64_t bp = 1;
+    int64_t bpPrev = 0;
+    while(bp != bpPrev) {
+        bpPrev = bp;
+        bp = 0;
+        for(auto [vlId, delay]: inDelays) {
+            auto vl = config->getVlink(vlId);
+            bp += numPackets(bpPrev, vl->bagB, delay.jit()) * sizeRound(vl->smax, config->cellSize, byTick);
+        }
+        if(++it >= maxIt) {
+            return -1;
+        }
+    }
+    return bp;
+}
+
+// == Rk,j(t) - Jk, k == curVlId
+int64_t OqPacket::delayFunc(int64_t t, int curVlId) const {
+    int64_t res = -t;
+    for(auto [vlId, delay]: inDelays) {
+        auto vl = config->getVlink(vlId);
+        res += numPacketsUp(t, vl->bagB, (vlId != curVlId) * delay.jit()) * vl->smax;
+    }
+    return res;
+}
+
+// == Rk,j(q)* - Jk, k == curVlId
+int64_t OqPacket::delayFuncRem(int q, int curVlId) {
+    if(delayFuncRemConstPart < 0) {
+        delayFuncRemConstPart = -bp;
+        for(auto [vlId, delay]: inDelays) {
+            auto vl = config->getVlink(vlId);
+            delayFuncRemConstPart += numPacketsUp(bp - vl->smax, vl->bagB, delay.jit()) * vl->smax;
+        }
+    }
+    auto curVl = config->getVlink(curVlId);
+    auto curJit = getInDelay(curVlId).jit();
+    return delayFuncRemConstPart
+            + (q + 1 - numPacketsUp(bp - curVl->smax, curVl->bagB, curJit)) * curVl->smax
+            - ramp((q - 1) * curVl->bagB + curVl->smax - bp);
+}
+
+Error OqPacket::calcCommon(int curVlId) {
+    if(bp < 0) {
+        bp = busyPeriod(inDelays, config, byTick);
+        if(bp < 0) {
+            return Error::BpDiverge;
+        }
+    }
+    auto curVl = config->getVlink(curVlId);
+    int64_t delayFuncMax = -1;
+    int64_t delayFuncValue;
+
+    for(int64_t t = 0; t <= bp - curVl->smax; t += curVl->bagB) {
+        delayFuncValue = delayFunc(t, curVlId);
+        if(delayFuncValue > delayFuncMax) {
+            delayFuncMax = delayFuncValue;
+        }
+    }
+
+    DelayData curDelay;
+    for(auto [vlId, delay]: inDelays) {
+        if(vlId == curVlId) {
+            curDelay = delay;
+            continue;
+        }
+        auto vl = config->getVlink(vlId);
+        for(int64_t t = ceildiv(delay.jit(), vl->bagB) * vl->bagB - delay.jit();
+            t <= bp - curVl->smax;
+            t += vl->bagB)
+        {
+            delayFuncValue = delayFunc(t, curVlId);
+            if(delayFuncValue > delayFuncMax) {
+                delayFuncMax = delayFuncValue;
+            }
+        }
+    }
+
+    int qMin = numPacketsUp(bp - curVl->smin, curVl->bagB, 0);
+    int qMax = numPackets(bp, curVl->bagB, curDelay.jit());
+    for(int q = qMin; q <= qMax; q++) {
+        delayFuncValue = delayFuncRem(q, curVlId);
+        if(delayFuncValue > delayFuncMax) {
+            delayFuncMax = delayFuncValue;
+        }
+    }
+    assert(delayFuncMax >= 0);
+    int64_t dmax = delayFuncMax + curDelay.dmax();
+    int64_t dmin = curDelay.dmin() + curVl->smin;
+    assert(dmax >= dmin);
+    delays[curVlId] = DelayData(dmin, dmax-dmin);
     return Error::Success;
 }
 
 Error OqPacket::calcFirst(int vlId) {
-    // TODO
+    auto vl = config->getVlink(vlId);
+    int64_t dmin = vl->smin;
+    int64_t jit = vl->jit0b + vl->smax - vl->smin;
+    delays[vlId] = DelayData(dmin, jit);
     return Error::Success;
 }
 
 DelayData OqPacket::e2e(int vlId) const {
-    // TODO
-    return DelayData();
+    return getDelay(vlId);
 }
