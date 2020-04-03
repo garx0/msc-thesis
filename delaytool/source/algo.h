@@ -406,7 +406,7 @@ class OqPacket : public PortDelays
 public:
     explicit OqPacket(Port* port, bool byTick = false)
     : PortDelays(port), bp(-1), byTick(byTick),
-      delayFuncRemConstPart(-1) {}
+      delayFuncRemConstPart(std::numeric_limits<int64_t>::min()) {}
 
     DelayData e2e(int vl) const override;
 
@@ -425,6 +425,33 @@ protected:
 private:
     int64_t bp;
     bool byTick; // if true, Ck* are used instead of Ck
+    int64_t delayFuncRemConstPart;
+};
+
+// OqA without packet FIFO
+class OqCellA : public PortDelays
+{
+public:
+    explicit OqCellA(Port* port)
+    : PortDelays(port), bp(-1),
+      delayFuncRemConstPart(std::numeric_limits<int64_t>::min()) {}
+
+    DelayData e2e(int vl) const override;
+
+protected:
+
+    // == Rk,j(t) - Jk, k == curVlId
+    int64_t delayFunc(int64_t t, int curVlId) const;
+
+    // == Rk,j(q)* - Jk, k == curVlId
+    int64_t delayFuncRem(int q, int curVlId);
+
+    Error calcCommon(int vl) override;
+
+    Error calcFirst(int vl) override;
+
+private:
+    int64_t bp;
     int64_t delayFuncRemConstPart;
 };
 
