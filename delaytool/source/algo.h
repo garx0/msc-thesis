@@ -8,6 +8,7 @@
 #include <vector>
 #include <map>
 #include <cassert>
+#include "algo.h"
 
 class Vlink;
 class Vnode;
@@ -220,6 +221,12 @@ public:
 
     DelayData getDelay(int vl) const { return getFromMap(vl, delays); }
 
+    DelayData getInDelay(int vl) const { return getFromMap(vl, inDelays); }
+
+    const std::map<int, DelayData>& getDelays() const { return delays; }
+
+    const std::map<int, DelayData>& getInDelays() const { return inDelays; }
+
     Error calc(int vl, bool first = false) {
         if(delays[vl].ready()) {
             return Error::Success;
@@ -235,10 +242,15 @@ public:
     // outDelay[vl] must have been calculated prior to call of this method
     virtual DelayData e2e(int vl) const = 0;
 
-protected:
+    friend Error calcFirstA(PortDelays* scheme, int vlId);
+    friend Error calcFirstB(PortDelays* scheme, int vlId);
+    friend DelayData e2eA(PortDelays* scheme, int vlId);
+    friend DelayData e2eB(PortDelays* scheme, int vlId);
+
     virtual Error calcCommon(int vl) = 0;
     virtual Error calcFirst(int vl) = 0;
 
+protected:
     std::map<int, DelayData> delays;
     std::map<int, DelayData> inDelays;
     bool _ready;
@@ -252,8 +264,6 @@ protected:
             return DelayData();
         }
     }
-
-    DelayData getInDelay(int vl) const { return getFromMap(vl, inDelays); }
 };
 
 class Vnode
@@ -302,7 +312,6 @@ public:
 
     DelayData e2e(int vl) const override;
 
-protected:
     Error calcCommon(int vl) override;
 
     Error calcFirst(int vl) override;
@@ -334,7 +343,6 @@ public:
 
     static Error completeCheck(Device *device);
 
-protected:
     // C_l values by l on prev switch
     defaultIntMap vlinkLoad;
 
@@ -378,7 +386,6 @@ public:
 
     DelayData e2e(int vl) const override;
 
-protected:
     void calcVlinkLoad() override;
 
     Error calcCommon(int vl) override;
@@ -393,7 +400,6 @@ public:
 
     DelayData e2e(int vl) const override;
 
-protected:
     void calcVlinkLoad() override;
 
     Error calcCommon(int vl) override;
@@ -401,16 +407,16 @@ protected:
     Error calcFirst(int vl) override;
 };
 
+// if cells = true, skmax is rounded up to whole number of cells
+template<bool cells = false>
 class OqPacket : public PortDelays
 {
 public:
-    explicit OqPacket(Port* port, bool byTick = false)
-    : PortDelays(port), bp(-1), byTick(byTick),
+    explicit OqPacket(Port* port)
+    : PortDelays(port), bp(-1),
       delayFuncRemConstPart(std::numeric_limits<int64_t>::min()) {}
 
     DelayData e2e(int vl) const override;
-
-protected:
 
     // == Rk,j(t) - Jk, k == curVlId
     int64_t delayFunc(int64_t t, int curVlId) const;
@@ -424,7 +430,6 @@ protected:
 
 private:
     int64_t bp;
-    bool byTick; // if true, Ck* are used instead of Ck
     int64_t delayFuncRemConstPart;
 };
 
@@ -438,8 +443,6 @@ public:
 
     DelayData e2e(int vl) const override;
 
-protected:
-
     // == Rk,j(t) - Jk, k == curVlId
     int64_t delayFunc(int64_t t, int curVlId) const;
 
@@ -454,6 +457,31 @@ private:
     int64_t bp;
     int64_t delayFuncRemConstPart;
 };
+
+// two different schemes stitched together
+template<class Scheme1, class Scheme2>
+class TwoSchemes : public PortDelays
+{
+    static_assert(std::is_base_of<PortDelays, Scheme1>::value && std::is_base_of<PortDelays, Scheme2>::value,
+            "parameters of TwoSchemes must inherit from PortDelays");
+public:
+    explicit TwoSchemes(Port* port)
+    : PortDelays(port), midDelaysReady(false), scheme1(port), scheme2(port) {}
+
+    DelayData e2e(int vl) const override;
+
+    Error calcCommon(int vl) override;
+
+    Error calcFirst(int vl) override;
+
+private:
+    bool midDelaysReady;
+    Scheme1 scheme1;
+    Scheme2 scheme2;
+};
+
+using OqA = TwoSchemes<OqCellA, OqPacket<>>;
+using OqB = TwoSchemes<OqPacket<true>, OqPacket<>>;
 
 class PortDelaysFactory {
 public:
@@ -471,7 +499,6 @@ public:
         ICreator() = default;
         virtual ~ICreator() = default;
         virtual PortDelaysOwn Create(Port*) const = 0;
-        virtual PortDelaysOwn Create(Port*, bool) const = 0;
     };
 
     // class that create TPortDelays objects with its constructor arguments
@@ -479,7 +506,6 @@ public:
     class TCreator : public ICreator {
     public:
         PortDelaysOwn Create(Port*) const override;
-        PortDelaysOwn Create(Port*, bool) const override;
     };
 
     // register TCreator<TPortDelays> at specified name
@@ -487,9 +513,7 @@ public:
     void AddCreator(const std::string& name);
 
     // calls corresponding Create method of Creator registered at specified name
-
     PortDelaysOwn Create(const std::string& name, Port*);
-    PortDelaysOwn Create(const std::string& name, Port*, bool);
 
 private:
     using TCreatorPtr = std::shared_ptr<ICreator>;
@@ -500,15 +524,6 @@ template<typename TPortDelays>
 PortDelaysOwn PortDelaysFactory::TCreator<TPortDelays>::Create(Port* port) const {
     if constexpr (std::is_constructible_v<TPortDelays, decltype(port)>) {
         return std::make_unique<TPortDelays>(port);
-    } else {
-        throw std::logic_error("can't make PortDelays with these argument types");
-    }
-}
-
-template<typename TPortDelays>
-PortDelaysOwn PortDelaysFactory::TCreator<TPortDelays>::Create(Port* port, bool flag) const {
-    if constexpr (std::is_constructible_v<TPortDelays, decltype(port), decltype(flag)>) {
-        return std::make_unique<TPortDelays>(port, flag);
     } else {
         throw std::logic_error("can't make PortDelays with these argument types");
     }

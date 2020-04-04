@@ -25,14 +25,16 @@ int main(int argc, char* argv[]) {
 
     program.add_argument("-s", "--scheme")
             .help("scheme type: voqa|voqb|oqp|oqa|oqb (default: oqp)")
-            .default_value(std::string("Mock")) // TODO OqPacket
+            .default_value(std::string("OqPacket"))
             .action([](const std::string& value) {
                 static const std::map<std::string, std::string> mapping = {
                         {"voqa", "VoqA"},
                         {"voqb", "VoqB"},
                         {"oqp", "OqPacket"},
                         {"oqa", "OqA"},
-                        {"oqb", "OqB"}
+                        {"oqb", "OqB"},
+                        {"oqc", "OqC"}, // DEBUG
+                        {"mock", "Mock"}, // DEBUG
                 };
                 auto found = mapping.find(strToLower(value));
                 if(found != mapping.end()) {

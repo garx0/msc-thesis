@@ -3,6 +3,7 @@
 #include <vector>
 #include <cmath>
 #include "algo.h"
+#include "delay.h"
 
 int treeSize(const Vnode* vnode) {
     int s = 1;
@@ -179,22 +180,16 @@ void PortDelaysFactory::RegisterAll() {
     AddCreator<Mock>("Mock");
     AddCreator<VoqA>("VoqA");
     AddCreator<VoqB>("VoqB");
-    AddCreator<OqPacket>("OqPacket");
+    AddCreator<OqPacket<>>("OqPacket");
+    AddCreator<OqA>("OqA");
+    AddCreator<OqB>("OqB");
+    AddCreator<OqCellA>("OqC"); // DEBUG
 }
 
 PortDelaysOwn PortDelaysFactory::Create(const std::string& name, Port* port) {
     auto found = creators.find(name);
     if(found != creators.end()) {
         return found->second->Create(port);
-    } else {
-        throw std::logic_error("invalid PortDelays type");
-    }
-}
-
-PortDelaysOwn PortDelaysFactory::Create(const std::string& name, Port* port, bool flag) {
-    auto found = creators.find(name);
-    if(found != creators.end()) {
-        return found->second->Create(port, flag);
     } else {
         throw std::logic_error("invalid PortDelays type");
     }
