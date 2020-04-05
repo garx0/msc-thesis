@@ -24,12 +24,12 @@ inline int64_t ramp(int64_t n) {
 
 // round size of packet to whole number of cells
 inline int64_t sizeRound(int64_t size, int64_t cellSize) {
-    return size + (-size % cellSize);
+    return size + cellSize * (size % cellSize != 0) - size % cellSize;
 }
 
 // round size of packet to whole number of cells if round == true
 inline int64_t sizeRound(int64_t size, int64_t cellSize, bool round) {
-    return size + round * (-size % cellSize);
+    return size + round * (cellSize * (size % cellSize != 0) - size % cellSize);
 }
 
 inline int64_t numPackets(int64_t intvl, int64_t bag, int64_t jit) {
@@ -121,7 +121,7 @@ Error OqPacket<cells>::calcCommon(int curVlId) {
             continue;
         }
         auto vl = config->getVlink(vlId);
-        for(int64_t t = ceildiv(delay.jit(), vl->bagB) * vl->bagB - delay.jit();
+        for(int64_t t = sizeRound(delay.jit(), vl->bagB) - delay.jit();
             t <= bp - curVl->smax;
             t += vl->bagB)
         {
@@ -131,6 +131,17 @@ Error OqPacket<cells>::calcCommon(int curVlId) {
             }
         }
     }
+
+    // DEBUG
+    int64_t delayFuncMax2 = -1;
+    for(int64_t t = 0; t <= bp - curVl->smax; t++) {
+        delayFuncValue = delayFunc(t, curVlId);
+        if(delayFuncValue > delayFuncMax2) {
+            delayFuncMax2 = delayFuncValue;
+        }
+    }
+    printf("--------------------------------DELAYFUNC MAX CALC COMPARE: %ld <= %ld\n", delayFuncMax, delayFuncMax2);
+    // /DEBUG
 
     // calc delayFuncRem in chosen points
     int qMin = numPacketsUp(bp - curVl->smin, curVl->bagB, 0);

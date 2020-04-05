@@ -27,7 +27,7 @@ VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme) {
     auto resources = afdxxml->FirstChildElement("resources");
     double cap = std::stof(resources->FirstChildElement("link")->Attribute("capacity"));
     config->linkRate = cap;
-    config->cellSize = 100; // TODO
+    config->cellSize = 53; // TODO
     config->voqL = 50;
     config->scheme = scheme;
 
