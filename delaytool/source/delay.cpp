@@ -24,7 +24,6 @@ DelayData Mock::e2e(int vl) const {
 }
 
 int64_t busyPeriod(const std::map<int, DelayData>& inDelays, VlinkConfig* config, bool byTick) {
-    static int64_t maxIt = 10000;
     int it = 0;
     int64_t bp = 1;
     int64_t bpPrev = 0;
@@ -36,7 +35,7 @@ int64_t busyPeriod(const std::map<int, DelayData>& inDelays, VlinkConfig* config
             bp += numPackets(bpPrev, vl->bagB, delay.jit()) * sizeRound(vl->smax, config->cellSize, byTick);
         }
         printf("bpPrev = %ld, bp = %ld\n", bpPrev, bp); // DEBUG
-        if(++it >= maxIt) {
+        if(++it >= maxBpIter) {
             return -1;
         }
     }
@@ -101,8 +100,12 @@ Error Voq::completeCheck(Device *sw) {
     }
     for(auto [portId, load]: inPortLoad) {
         if(load > sw->config->voqL) {
-            // TODO verbose
-            return Error::BadForVoq;
+            std::string verbose =
+                    "overload on input port "
+                    + std::to_string(portId)
+                    + " of switch "
+                    + std::to_string(sw->id);
+            return Error(Error::BadForVoq, verbose);
         }
     }
     return Error::Success;
@@ -122,8 +125,12 @@ Error VoqA::calcCommon(int vlId) {
     calcOutPrevLoad();
     auto vl = config->getVlink(vlId);
     if(outPrevLoadSum > config->voqL) {
-        // TODO verbose
-        return Error::BadForVoq;
+        std::string verbose =
+                "overload on output port "
+                + std::to_string(port->outPrev)
+                + " of switch "
+                + std::to_string(port->prevDevice->id);
+        return Error(Error::BadForVoq, verbose);
     }
     int64_t localMaxDelay = (config->voqL * 2 + 1 + outPrevLoadSum - vlinkLoad.Get(vlId)) * config->cellSize
                          + sizeRound(vl->smax, config->cellSize);
@@ -230,7 +237,15 @@ Error OqCellA::calcCommon(int curVlId) {
     if(bp < 0) {
         bp = busyPeriod(inDelays, config, true);
         if(bp < 0) {
-            return Error::BpDiverge;
+            std::string verbose =
+                    "overload on output port "
+                    + std::to_string(port->outPrev)
+                    + " of switch "
+                    + std::to_string(port->prevDevice->id)
+                    + " because busy period calculation took over "
+                    + std::to_string(maxBpIter)
+                    + " iterations";
+            return Error(Error::BpDiverge, verbose);
         }
     }
     auto curVl = config->getVlink(curVlId);

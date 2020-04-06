@@ -5,6 +5,14 @@
 #include "algo.h"
 #include "delay.h"
 
+bool operator==(Error::ErrorType lhs, const Error& rhs) {
+    return lhs == rhs.type;
+}
+
+bool operator!=(Error::ErrorType lhs, const Error& rhs) {
+    return lhs != rhs.type;
+}
+
 int treeSize(const Vnode* vnode) {
     int s = 1;
     for(const auto& own: vnode->next) {
@@ -129,7 +137,7 @@ Error Vnode::prepareCalc(int chainSize, std::string debugPrefix) const { // DEBU
             printf("%svl %d-%d calling prepareCalc on vl %d-%d\n",
                    debugPrefix.c_str(), vl->id, device->id, curVnode->vl->id, curVnode->device->id); // DEBUG
             err = curVnode->prepareCalc(++chainSize, debugPrefix+"\t");
-            if(err != Error::Success) {
+            if(err) {
                 return err;
             }
             int vlId = curVnode->vl->id;
@@ -138,7 +146,7 @@ Error Vnode::prepareCalc(int chainSize, std::string debugPrefix) const { // DEBU
         }
         in->delays->setInDelays(requiredDelays);
         err = in->delays->calc(vl->id);
-        if(err != Error::Success) {
+        if(err) {
             return err;
         }
     }
@@ -150,7 +158,7 @@ Error VlinkConfig::calcE2e() {
         for(auto [_, vnode]: vl->dst) {
             printf("\ncalling calcE2e on vlink %d device %d\n", vl->id, vnode->device->id); // DEBUG
             Error err = vnode->calcE2e();
-            if(err != Error::Success) {
+            if(err) {
                 return err;
             }
             DelayData e2e = vnode->e2e; // DEBUG
@@ -167,7 +175,7 @@ Error VlinkConfig::calcE2e() {
                 continue;
             }
             Error err = Voq::completeCheck(device);
-            if(err != Error::Success) {
+            if(err) {
                 return err;
             }
         }

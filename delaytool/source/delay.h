@@ -1,6 +1,9 @@
+#pragma once
 #ifndef DELAYTOOL_DELAY_H
 #define DELAYTOOL_DELAY_H
 #include "algo.h"
+
+constexpr int64_t maxBpIter = 10000;
 
 // floor(x/y)
 inline int64_t floordiv(int64_t x, int64_t y) {
@@ -51,7 +54,7 @@ inline int64_t numCells(int64_t intvl, int64_t bag, int64_t jit, int64_t nCells,
 inline int64_t numCellsUp(int64_t intvl, int64_t bag, int64_t jit, int64_t nCells, int64_t cellSize) {
     return nCells * ((intvl + jit) / bag)
            + std::min(nCells,
-                      ceildiv((intvl + jit) % bag - jit * ((intvl + jit) / bag == 0), cellSize));
+                      ceildiv_up((intvl + jit) % bag - jit * ((intvl + jit) / bag == 0), cellSize));
 }
 
 int64_t busyPeriod(const std::map<int, DelayData>& inDelays, VlinkConfig* config, bool byTick = false);
@@ -98,7 +101,15 @@ Error OqPacket<cells>::calcCommon(int curVlId) {
     if(bp < 0) {
         bp = busyPeriod(inDelays, config, cells);
         if(bp < 0) {
-            return Error::BpDiverge;
+            std::string verbose =
+                    "overload on output port "
+                    + std::to_string(port->outPrev)
+                    + " of switch "
+                    + std::to_string(port->prevDevice->id)
+                    + " because busy period calculation took over "
+                    + std::to_string(maxBpIter)
+                    + " iterations";
+            return Error(Error::BpDiverge, verbose);
         }
     }
     auto curVl = config->getVlink(curVlId);
@@ -180,7 +191,7 @@ Error TwoSchemes<Scheme1, Scheme2>::calcCommon(int curVlId) {
         scheme1.setInDelays(inDelays);
         for(auto [vlId, _]: inDelays) {
             Error err = scheme1.calcCommon(vlId);
-            if(err != Error::Success) {
+            if(err) {
                 return err;
             }
         }
@@ -188,7 +199,7 @@ Error TwoSchemes<Scheme1, Scheme2>::calcCommon(int curVlId) {
         midDelaysReady = true;
     }
     Error err = scheme2.calcCommon(curVlId);
-    if(err != Error::Success) {
+    if(err) {
         return err;
     }
     delays[curVlId] = scheme2.getDelay(curVlId);

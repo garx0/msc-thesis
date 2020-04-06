@@ -26,7 +26,71 @@ using PortOwn = std::unique_ptr<Port>;
 using VlinkConfigOwn = std::unique_ptr<VlinkConfig>;
 using PortDelaysFactoryOwn = std::unique_ptr<PortDelaysFactory>;
 
-enum class Error {Success, Cycle, BadForVoq, BpDiverge};
+class Error {
+public:
+    enum ErrorType {Success, Cycle, BadForVoq, BpDiverge};
+
+    Error(ErrorType type = Success, const std::string& verbose = "")
+        : type(type), verbose(verbose) {}
+
+    Error(Error& other) = default;
+
+    Error(Error&& other) = default;
+
+    Error& operator=(Error& other) = default;
+
+    Error& operator=(Error&& other) = default;
+
+
+    std::string Verbose() const {
+        return verbose;
+    }
+
+    std::string TypeString() const {
+        switch(type) {
+            case Success:
+                return "Success";
+            case Cycle:
+                return "Cycle";
+            case BadForVoq:
+                return "BadForVoq";
+            case BpDiverge:
+                return "BpDiverge";
+        }
+        return "";
+    }
+
+    operator bool() const {
+        return type != Success;
+    }
+
+    bool operator==(Error& other) const {
+        return type == other.type;
+    }
+
+    bool operator!=(Error& other) const {
+        return type != other.type;
+    }
+
+    bool operator==(ErrorType other) const {
+        return type == other;
+    }
+
+    bool operator!=(ErrorType other) const {
+        return type != other;
+    }
+
+    friend bool operator==(ErrorType lhs, const Error& rhs);
+    friend bool operator!=(ErrorType lhs, const Error& rhs);
+
+private:
+    ErrorType type;
+    std::string verbose;
+};
+
+bool operator==(Error::ErrorType lhs, const Error& rhs);
+
+bool operator!=(Error::ErrorType lhs, const Error& rhs);
 
 class VlinkConfig
 {
@@ -285,7 +349,7 @@ public:
 
     Error calcE2e() {
         Error err = prepareCalc(1);
-        if(err == Error::Success) {
+        if(!err) {
             e2e = in->delays->e2e(vl->id);
         }
         return err;

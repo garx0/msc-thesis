@@ -57,37 +57,37 @@ int main(int argc, char* argv[]) {
     tinyxml2::XMLDocument doc;
     auto err = doc.LoadFile(fileIn.c_str());
     if(err) {
-        std::cerr << "error opening input file: " << tinyxml2::XMLDocument::ErrorIDToName(err) << std::endl;
+        fprintf(stderr, "error: can't load input file: %s\n", tinyxml2::XMLDocument::ErrorIDToName(err));
         return 0;
     }
     FILE *fpOut = fopen(fileOut.c_str(), "w");
     if(fpOut == nullptr) {
-        std::cerr << "error: cannot open " << fileOut << std::endl;
+        fprintf(stderr, "error: can't open output file: %s\n", fileOut.c_str());
         return 0;
     }
     VlinkConfigOwn config = fromXml(doc, scheme);
     if(config == nullptr) {
-        std::cerr << "error reading from xml" << std::endl;
+        fprintf(stderr, "error reading from xml\n");
         fclose(fpOut);
         return 0;
     }
     DebugInfo(config.get()); // DEBUG
     Error calcErr = config->calcE2e();
-    if(calcErr != Error::Success) {
-        // TODO verbose error info?
-        std::cerr << "error calculating delay: bad VL configuration, code=" << static_cast<int>(calcErr) << std::endl;
+    if(calcErr) {
+        fprintf(stderr, "error calculating delay because of bad VL configuration: %s, %s\n",
+                calcErr.TypeString().c_str(), calcErr.Verbose().c_str());
         fclose(fpOut);
         return 0;
     }
     bool ok = toXml(config.get(), doc);
     if(!ok) {
-        std::cerr << "error converting output to xml" << std::endl;
+        fprintf(stderr, "error converting to xml\n");
         fclose(fpOut);
         return 0;
     }
     err = doc.SaveFile(fpOut, false);
     if(err) {
-        std::cerr << "error writing to output file: " << tinyxml2::XMLDocument::ErrorIDToName(err) << std::endl;
+        fprintf(stderr, "error writing to output file: %s\n", tinyxml2::XMLDocument::ErrorIDToName(err));
     }
     fclose(fpOut);
     return 0;
