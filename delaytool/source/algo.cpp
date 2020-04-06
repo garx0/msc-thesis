@@ -191,7 +191,7 @@ void PortDelaysFactory::RegisterAll() {
     AddCreator<OqPacket<>>("OqPacket");
     AddCreator<OqA>("OqA");
     AddCreator<OqB>("OqB");
-    AddCreator<OqCellA>("OqC"); // DEBUG
+    AddCreator<OqCellB>("OqC"); // DEBUG
 }
 
 PortDelaysOwn PortDelaysFactory::Create(const std::string& name, Port* port) {

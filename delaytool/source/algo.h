@@ -498,10 +498,10 @@ private:
 };
 
 // OqA without packet FIFO
-class OqCellA : public PortDelays
+class OqCellB : public PortDelays
 {
 public:
-    explicit OqCellA(Port* port)
+    explicit OqCellB(Port* port)
     : PortDelays(port), bp(-1),
       delayFuncRemConstPart(std::numeric_limits<int64_t>::min()) {}
 
@@ -538,14 +538,17 @@ public:
 
     Error calcFirst(int vl) override;
 
+    // make out delay from scheme2 out delay
+    DelayData completeDelay(DelayData delay, int vl) const;
+
 private:
     bool midDelaysReady;
     Scheme1 scheme1;
     Scheme2 scheme2;
 };
 
-using OqA = TwoSchemes<OqCellA, OqPacket<>>;
-using OqB = TwoSchemes<OqPacket<true>, OqPacket<>>;
+using OqA = TwoSchemes<OqPacket<true>, OqPacket<>>;
+using OqB = TwoSchemes<OqCellB, OqPacket<>>;
 
 class PortDelaysFactory {
 public:

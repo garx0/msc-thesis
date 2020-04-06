@@ -165,11 +165,17 @@ Error VoqB::calcCommon(int vlId) {
     calcOutPrevLoad();
     auto vl = config->getVlink(vlId);
     if(outPrevLoadSum > config->voqL) {
-        // TODO verbose
+        std::string verbose =
+                "overload on output port "
+                + std::to_string(port->outPrev)
+                + " of switch "
+                + std::to_string(port->prevDevice->id);
         return Error::BadForVoq;
     }
-    int64_t localMinDelay = sizeRound(vl->smin, config->cellSize) + config->voqL * config->cellSize
-                    + std::min(config->cellSize, vl->smin);
+    int curSizeRoundMin = sizeRound(vl->smin, config->cellSize);
+    int64_t localMinDelay = std::min(config->voqL * config->cellSize, curSizeRoundMin)
+            + curSizeRoundMin +
+            + std::min(config->cellSize, vl->smin);
     int64_t localMaxDelay;
     int64_t nCells = ceildiv(vl->smax, config->cellSize);
     if(nCells < config->voqL) {
@@ -195,7 +201,7 @@ DelayData VoqB::e2e(int vlId) const {
 }
 
 // == Rk,j(t) - Jk, k == curVlId
-int64_t OqCellA::delayFunc(int64_t t, int curVlId) const {
+int64_t OqCellB::delayFunc(int64_t t, int curVlId) const {
     auto curVl = config->getVlink(curVlId);
     int64_t curSizeRound = sizeRound(curVl->smax, config->cellSize);
     int64_t res = ceildiv_up(t, curVl->bagB) * curSizeRound - t;
@@ -210,7 +216,7 @@ int64_t OqCellA::delayFunc(int64_t t, int curVlId) const {
 }
 
 // == Rk,j(q)* - Jk, k == curVlId
-int64_t OqCellA::delayFuncRem(int q, int curVlId) {
+int64_t OqCellB::delayFuncRem(int q, int curVlId) {
     auto curVl = config->getVlink(curVlId);
     int64_t curSizeRound = sizeRound(curVl->smax, config->cellSize);
     int curNcells = ceildiv(curVl->smax, config->cellSize);
@@ -233,7 +239,7 @@ int64_t OqCellA::delayFuncRem(int q, int curVlId) {
            - ramp((q - 1) * curVl->bagB + curSizeRound - bp);
 }
 
-Error OqCellA::calcCommon(int curVlId) {
+Error OqCellB::calcCommon(int curVlId) {
     if(bp < 0) {
         bp = busyPeriod(inDelays, config, true);
         if(bp < 0) {
@@ -339,12 +345,26 @@ Error OqCellA::calcCommon(int curVlId) {
     return Error::Success;
 }
 
-Error OqCellA::calcFirst(int vlId) {
+Error OqCellB::calcFirst(int vlId) {
     return calcFirstA(this, vlId);
 }
 
-DelayData OqCellA::e2e(int vlId) const {
+DelayData OqCellB::e2e(int vlId) const {
     return e2eA(this, vlId);
+}
+
+template<>
+DelayData OqA::completeDelay(DelayData delay, int vlId) const {
+    return DelayData(delay.dmin(), delay.jit() + config->cellSize);
+}
+
+template<>
+DelayData OqB::completeDelay(DelayData delay, int vlId) const {
+    auto vl = config->getVlink(vlId);
+    int64_t dmaxInc = config->cellSize * 2 - vl->smax;
+    int64_t dminInc = -ramp(vl->smin - config->cellSize);
+    assert(delay.dmin() + dminInc <= delay.dmax() + dmaxInc);
+    return DelayData(delay.dmin() + dminInc, delay.jit() + dmaxInc - dminInc);
 }
 
 template<>

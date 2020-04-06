@@ -27,8 +27,8 @@ VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme) {
     auto resources = afdxxml->FirstChildElement("resources");
     double cap = std::stof(resources->FirstChildElement("link")->Attribute("capacity"));
     config->linkRate = cap;
-    config->cellSize = 53; // TODO
-    config->voqL = 50; // TODO
+    config->cellSize = 10; // TODO
+    config->voqL = 100; // TODO
     config->scheme = scheme;
 
     for(auto res = resources->FirstChildElement("link");
@@ -100,8 +100,9 @@ VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme) {
             paths.push_back(path);
             printf("VL %s path to %s\n", vl->Attribute("number"), pathEl->Attribute("dest"));
         }
-        int jit0 = 0; // TODO взять из xml, если есть, иначе 0 или некоторый jmax
-        config->vlinks[number] = std::make_unique<Vlink>(config.get(), number, paths, bag, smax, 1, jit0);
+        double jit0 = 0; // TODO взять из xml, если есть, иначе 0 или 0.5
+        int smin = 64; // default
+        config->vlinks[number] = std::make_unique<Vlink>(config.get(), number, paths, bag, smax, smin, jit0);
     }
     config->calcChainMaxSize();
     printf("chainMaxSize = %d\n", config->chainMaxSize); // DEBUG

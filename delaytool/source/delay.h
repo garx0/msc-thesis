@@ -202,7 +202,7 @@ Error TwoSchemes<Scheme1, Scheme2>::calcCommon(int curVlId) {
     if(err) {
         return err;
     }
-    delays[curVlId] = scheme2.getDelay(curVlId);
+    delays[curVlId] = completeDelay(scheme2.getDelay(curVlId), curVlId);
     return Error::Success;
 }
 
