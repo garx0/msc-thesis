@@ -34,7 +34,6 @@ int64_t busyPeriod(const std::map<int, DelayData>& inDelays, VlinkConfig* config
             auto vl = config->getVlink(vlId);
             bp += numPackets(bpPrev, vl->bagB, delay.jit()) * sizeRound(vl->smax, config->cellSize, byTick);
         }
-        printf("bpPrev = %ld, bp = %ld\n", bpPrev, bp); // DEBUG
         if(++it >= maxBpIter) {
             return -1;
         }
@@ -99,13 +98,14 @@ Error Voq::completeCheck(Device *sw) {
         }
     }
     for(auto [portId, load]: inPortLoad) {
+        printf("load on in port [%d] = %d\n", portId, load); // DEBUG
         if(load > sw->config->voqL) {
             std::string verbose =
                     "overload on input port "
                     + std::to_string(portId)
                     + " of switch "
                     + std::to_string(sw->id);
-            return Error(Error::BadForVoq, verbose);
+            return Error(Error::BadForVoq, VoqOverloadVerbose(portId, sw->id, "input"));
         }
     }
     return Error::Success;
@@ -119,18 +119,17 @@ void VoqA::calcVlinkLoad() {
                 * ceildiv(vl->smax, config->cellSize);
         vlinkLoad.Inc(vlId, load);
     }
+    for(auto [id, load]: vlinkLoad) {
+        printf("[device %d] load on out port [%d] = %d\n", port->device->id, id, load); // DEBUG
+    }
 }
 
 Error VoqA::calcCommon(int vlId) {
     calcOutPrevLoad();
     auto vl = config->getVlink(vlId);
     if(outPrevLoadSum > config->voqL) {
-        std::string verbose =
-                "overload on output port "
-                + std::to_string(port->outPrev)
-                + " of switch "
-                + std::to_string(port->prevDevice->id);
-        return Error(Error::BadForVoq, verbose);
+        return Error(Error::BadForVoq,
+                VoqOverloadVerbose(port->outPrev, port->prevDevice->id, "output"));
     }
     int64_t localMaxDelay = (config->voqL * 2 + 1 + outPrevLoadSum - vlinkLoad.Get(vlId)) * config->cellSize
                          + sizeRound(vl->smax, config->cellSize);
@@ -159,18 +158,17 @@ void VoqB::calcVlinkLoad() {
                 ceildiv(vl->smax, config->cellSize), config->cellSize);
         vlinkLoad.Inc(vlId, load);
     }
+    for(auto [id, load]: vlinkLoad) {
+        printf("load on out port [%d] = %d\n", id, load); // DEBUG
+    }
 }
 
 Error VoqB::calcCommon(int vlId) {
     calcOutPrevLoad();
     auto vl = config->getVlink(vlId);
     if(outPrevLoadSum > config->voqL) {
-        std::string verbose =
-                "overload on output port "
-                + std::to_string(port->outPrev)
-                + " of switch "
-                + std::to_string(port->prevDevice->id);
-        return Error::BadForVoq;
+        return Error(Error::BadForVoq,
+                VoqOverloadVerbose(port->outPrev, port->prevDevice->id, "output"));
     }
     int curSizeRoundMin = sizeRound(vl->smin, config->cellSize);
     int64_t localMinDelay = std::min(config->voqL * config->cellSize, curSizeRoundMin)
@@ -236,7 +234,8 @@ int64_t OqCellB::delayFuncRem(int q, int curVlId) {
            + (q + 1) * curSizeRound
            - numCellsUp(bp - config->cellSize, curVl->bagB, curJit, curNcells, config->cellSize)
            * config->cellSize
-           - ramp((q - 1) * curVl->bagB + curSizeRound - bp);
+           + ramp(curJit - ramp(curSizeRound + (q - 1) * curVl->bagB - bp))
+           - curJit;
 }
 
 Error OqCellB::calcCommon(int curVlId) {
@@ -251,27 +250,30 @@ Error OqCellB::calcCommon(int curVlId) {
                     + " because busy period calculation took over "
                     + std::to_string(maxBpIter)
                     + " iterations";
-            return Error(Error::BpDiverge, verbose);
+            return Error(Error::BpDiverge, OqOverloadVerbose(port));
         }
     }
     auto curVl = config->getVlink(curVlId);
     int64_t curSizeRound = sizeRound(curVl->smax, config->cellSize);
     int64_t delayFuncMax = -1;
     int64_t delayFuncValue;
+    int64_t delayFuncArgMax = -1;
 
     assert(bp >= curSizeRound);
     // calc delayFunc in chosen points, part 1
     for(int64_t t = 0; t <= bp - curSizeRound; t += curVl->bagB) {
-        printf("p1: calc delayFunc for t=%ld\n", t); // DEBUG
+//        printf("p1: calc delayFunc for t=%ld\n", t); // DEBUG
         delayFuncValue = delayFunc(t, curVlId);
         if(delayFuncValue > delayFuncMax) {
+            delayFuncArgMax = t;
             delayFuncMax = delayFuncValue;
         }
     }
 
     // calc delayFunc in chosen points, part 2
+    int64_t argShift = curSizeRound - config->cellSize; // delayFunc(t) calls numCellsUp(t + argShift, ...)
     DelayData curDelay;
-    int64_t maxSizeRound = -1; // max sizeRound_l by l != curVlId
+    int64_t maxP3Limit = -1; // max (min(BAG_l - Jit_l, sRound_l)) by l != curVlId
     for(auto [vlId, delay]: inDelays) {
         if(vlId == curVlId) {
             curDelay = delay;
@@ -279,25 +281,20 @@ Error OqCellB::calcCommon(int curVlId) {
         }
         auto vl = config->getVlink(vlId);
         int64_t sRound = sizeRound(vl->smax, config->cellSize);
-        if(sRound > maxSizeRound) {
-            maxSizeRound = sRound;
+        int64_t p3Limit = std::min(sRound, vl->bagB - delay.jit());
+        if(p3Limit > maxP3Limit) {
+            maxP3Limit = p3Limit;
         }
-        for(int64_t t1 = vl->bagB - delay.jit(); t1 < bp; t1 += vl->bagB) {
-            // t2 <= sizeRound(min(...), cellSize) - curSizeRound && t1 + t2 <= bp - curSizeRound
-            int64_t tmax = std::min<int64_t>(
-                    t1 + sizeRound(std::min<int64_t>(vl->smax, vl->bagB - delay.jit()), config->cellSize),
-                    bp
-                ) - curSizeRound;
-            for(int64_t t = t1 - curSizeRound + 1;
-                t <= tmax;
-                t += config->cellSize)
-            {
+        for(int64_t t1 = vl->bagB - delay.jit() - argShift; t1 <= bp - curSizeRound; t1 += vl->bagB) {
+            int64_t tmax = std::min(bp - curSizeRound, t1 + sRound - 1);
+            for(int64_t t = t1; t <= tmax; t += config->cellSize) {
                 if(t < 0) {
                     continue;
                 }
-                printf("p2: calc delayFunc for t=%ld\n", t); // DEBUG
+//                printf("p2: calc delayFunc for t=%ld\n", t); // DEBUG
                 delayFuncValue = delayFunc(t, curVlId);
                 if(delayFuncValue > delayFuncMax) {
+                    delayFuncArgMax = t;
                     delayFuncMax = delayFuncValue;
                 }
             }
@@ -305,39 +302,55 @@ Error OqCellB::calcCommon(int curVlId) {
     }
 
     // calc delayFunc in chosen points, part 3
-    int64_t tmax = std::min(bp, maxSizeRound) - curSizeRound;
+    int64_t tmax = std::min(bp - curSizeRound, maxP3Limit - argShift - 1);
     for(int64_t t = config->cellSize; t <= tmax; t += config->cellSize) {
-        printf("p3: calc delayFunc for t=%ld\n", t); // DEBUG
+//        printf("p3: calc delayFunc for t=%ld\n", t); // DEBUG
         delayFuncValue = delayFunc(t, curVlId);
         if(delayFuncValue > delayFuncMax) {
+            delayFuncArgMax = t;
             delayFuncMax = delayFuncValue;
         }
     }
 
     // DEBUG
-    int64_t delayFuncMax2 = -1;
-    for(int64_t t = 0; t <= bp - curVl->smax; t++) {
-        delayFuncValue = delayFunc(t, curVlId);
-        if(delayFuncValue > delayFuncMax2) {
-            delayFuncMax2 = delayFuncValue;
-        }
-    }
-    printf("--------------------------------DELAYFUNC MAX CALC COMPARE: %ld <= %ld\n", delayFuncMax, delayFuncMax2);
+//    int64_t delayFuncMax2 = -1;
+//    int64_t delayFuncArgMax2 = -1;
+//    for(int64_t t = 0; t <= bp - curVl->smax; t++) {
+//        delayFuncValue = delayFunc(t, curVlId);
+////        printf("f(%ld)=%ld; ", t, delayFuncValue);
+////        printf("f(%ld)+t=%ld\n", t, delayFuncValue + t);
+//        if(delayFuncValue > delayFuncMax2) {
+//            delayFuncArgMax2 = t;
+//            delayFuncMax2 = delayFuncValue;
+//        }
+//    }
+//    if(delayFuncMax != delayFuncMax2) {
+//        printf("--------------------------------NOT REACHED MAX: %ld (on %ld) <= %ld (on %ld)\n",
+//                delayFuncMax, delayFuncArgMax, delayFuncMax2, delayFuncArgMax2);
+//    } else {
+//        printf("--------------------------------reached max: %ld (on %ld) == %ld (on %ld)\n",
+//               delayFuncMax, delayFuncArgMax, delayFuncMax2, delayFuncArgMax2);
+//    }
+//    assert(delayFuncMax == delayFuncMax2);
+//    printf("delayFunc max = %ld\n", delayFuncMax);
     // /DEBUG
+    // TODO не забыть исправить force jit0
 
     // calc delayFuncRem in chosen points
     int qMin = numPacketsUp(bp - sizeRound(curVl->smin, config->cellSize), curVl->bagB, 0);
     int qMax = numPackets(bp, curVl->bagB, curDelay.jit());
+//    printf("qmin=%d, qmax=%d\n", qMin, qMax); // DEBUG
     for(int q = qMin; q <= qMax; q++) {
-        printf("p4: calc delayFuncRem for q=%d\n", q); // DEBUG
+//        printf("p4: calc delayFuncRem for q=%d\n", q); // DEBUG
         delayFuncValue = delayFuncRem(q, curVlId);
+//        printf("delayFuncRem(%d) = %ld\n", q, delayFuncValue); // DEBUG
         if(delayFuncValue > delayFuncMax) {
             delayFuncMax = delayFuncValue;
         }
     }
 
     assert(delayFuncMax >= 0);
-    printf("delayFuncMax = %ld\n\n", delayFuncMax); // DEBUG
+//    printf("delayFuncMax = %ld\n\n", delayFuncMax); // DEBUG
     int64_t dmax = curDelay.dmax() + delayFuncMax;
     int64_t dmin = curDelay.dmin() + sizeRound(curVl->smin, config->cellSize);
     assert(dmax >= dmin);
@@ -346,11 +359,11 @@ Error OqCellB::calcCommon(int curVlId) {
 }
 
 Error OqCellB::calcFirst(int vlId) {
-    return calcFirstA(this, vlId);
+    return calcFirstB(this, vlId);
 }
 
 DelayData OqCellB::e2e(int vlId) const {
-    return e2eA(this, vlId);
+    return e2eB(this, vlId);
 }
 
 template<>

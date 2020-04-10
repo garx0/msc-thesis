@@ -44,6 +44,16 @@ int main(int argc, char* argv[]) {
                 }
             });
 
+    program.add_argument("-c", "--cellsize")
+            .help("cell size in bytes for cell scheme (VOQ-A/B, OQ-A/B)")
+            .action([](const std::string& value) { return std::stoi(value); })
+            .default_value(cellSizeDefault);
+
+    program.add_argument("-p", "--periodvoq")
+            .help("clock period for VOQ scheme")
+            .action([](const std::string& value) { return std::stoi(value); })
+            .default_value(voqPeriodDefault);
+
     try {
         program.parse_args(argc, argv);
     } catch (const std::runtime_error& err) {
@@ -54,6 +64,9 @@ int main(int argc, char* argv[]) {
     std::string fileIn = program.get<std::string>("input");
     std::string fileOut = program.get<std::string>("output");
     std::string scheme = program.get<std::string>("--scheme");
+    int cellSize = program.get<int>("--cellsize");
+    int voqPeriod = program.get<int>("--periodvoq");
+
     tinyxml2::XMLDocument doc;
     auto err = doc.LoadFile(fileIn.c_str());
     if(err) {
@@ -65,7 +78,7 @@ int main(int argc, char* argv[]) {
         fprintf(stderr, "error: can't open output file: %s\n", fileOut.c_str());
         return 0;
     }
-    VlinkConfigOwn config = fromXml(doc, scheme);
+    VlinkConfigOwn config = fromXml(doc, scheme, cellSize, voqPeriod);
     if(config == nullptr) {
         fprintf(stderr, "error reading from xml\n");
         fclose(fpOut);

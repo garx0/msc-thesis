@@ -10,12 +10,12 @@ inline int64_t floordiv(int64_t x, int64_t y) {
     return x / y;
 }
 
-// ceil(x/y)
+// ceil(x/y), x >= 0
 inline int64_t ceildiv(int64_t x, int64_t y) {
     return x / y + (x % y != 0);
 }
 
-// = ceil(x/y + 0) = floor(x/y) + 1
+// = ceil(x/y + 0) = floor(x/y) + 1, x >= 0
 inline int64_t ceildiv_up(int64_t x, int64_t y) {
     return x / y + 1;
 }
@@ -44,6 +44,7 @@ inline int64_t numPacketsUp(int64_t intvl, int64_t bag, int64_t jit) {
     return ceildiv_up(intvl + jit, bag);
 }
 
+// intvl >= 0
 inline int64_t numCells(int64_t intvl, int64_t bag, int64_t jit, int64_t nCells, int64_t cellSize) {
     return nCells * ((intvl + jit) / bag)
            + std::min(nCells,
@@ -51,10 +52,30 @@ inline int64_t numCells(int64_t intvl, int64_t bag, int64_t jit, int64_t nCells,
 }
 
 // = numCells(intvl+0, ...) (limit from above)
+// intvl >= 0
 inline int64_t numCellsUp(int64_t intvl, int64_t bag, int64_t jit, int64_t nCells, int64_t cellSize) {
     return nCells * ((intvl + jit) / bag)
            + std::min(nCells,
                       ceildiv_up((intvl + jit) % bag - jit * ((intvl + jit) / bag == 0), cellSize));
+}
+
+inline std::string VoqOverloadVerbose(int portId, int switchId, const std::string& portType) {
+    return std::string("overload on ")
+           + portType
+           + " port "
+           + std::to_string(portId)
+           + " of switch "
+           + std::to_string(switchId);
+}
+
+inline std::string OqOverloadVerbose(Port* port) {
+    return std::string("overload on output port ")
+           + std::to_string(port->outPrev)
+           + " of switch "
+           + std::to_string(port->prevDevice->id)
+           + " because busy period calculation took over "
+           + std::to_string(maxBpIter)
+           + " iterations";
 }
 
 int64_t busyPeriod(const std::map<int, DelayData>& inDelays, VlinkConfig* config, bool byTick = false);
@@ -93,7 +114,8 @@ int64_t OqPacket<cells>::delayFuncRem(int q, int curVlId) {
     int64_t curJit = getInDelay(curVlId).jit();
     return delayFuncRemConstPart
            + (q + 1 - numPacketsUp(bp - curVl->smax, curVl->bagB, curJit)) * curVl->smax
-           - ramp((q - 1) * curVl->bagB + curVl->smax - bp);
+           + ramp(curJit - ramp(curVl->smax + (q - 1) * curVl->bagB - bp))
+           - curJit;
 }
 
 template<bool cells>
@@ -109,7 +131,7 @@ Error OqPacket<cells>::calcCommon(int curVlId) {
                     + " because busy period calculation took over "
                     + std::to_string(maxBpIter)
                     + " iterations";
-            return Error(Error::BpDiverge, verbose);
+            return Error(Error::BpDiverge, OqOverloadVerbose(port));
         }
     }
     auto curVl = config->getVlink(curVlId);
@@ -144,21 +166,25 @@ Error OqPacket<cells>::calcCommon(int curVlId) {
     }
 
     // DEBUG
-    int64_t delayFuncMax2 = -1;
-    for(int64_t t = 0; t <= bp - curVl->smax; t++) {
-        delayFuncValue = delayFunc(t, curVlId);
-        if(delayFuncValue > delayFuncMax2) {
-            delayFuncMax2 = delayFuncValue;
-        }
-    }
-    printf("--------------------------------DELAYFUNC MAX CALC COMPARE: %ld <= %ld\n", delayFuncMax, delayFuncMax2);
+//    int64_t delayFuncMax2 = -1;
+//    for(int64_t t = 0; t <= bp - curVl->smax; t++) {
+//        delayFuncValue = delayFunc(t, curVlId);
+//        if(delayFuncValue > delayFuncMax2) {
+//            delayFuncMax2 = delayFuncValue;
+//        }
+//    }
+//    assert(delayFuncMax == delayFuncMax2);
+//    printf("--------------------------------DELAYFUNC MAX CALC COMPARE: %ld <= %ld\n", delayFuncMax, delayFuncMax2);
+//    printf("delayFunc max = %ld\n", delayFuncMax);
     // /DEBUG
 
     // calc delayFuncRem in chosen points
     int qMin = numPacketsUp(bp - curVl->smin, curVl->bagB, 0);
     int qMax = numPackets(bp, curVl->bagB, curDelay.jit());
+//    printf("qmin=%d, qmax=%d\n", qMin, qMax); // DEBUG
     for(int q = qMin; q <= qMax; q++) {
         delayFuncValue = delayFuncRem(q, curVlId);
+//        printf("delayFuncRem(%d) = %ld\n", q, delayFuncValue); // DEBUG
         if(delayFuncValue > delayFuncMax) {
             delayFuncMax = delayFuncValue;
         }

@@ -134,8 +134,10 @@ Error Vnode::prepareCalc(int chainSize, std::string debugPrefix) const { // DEBU
         auto fromOutPort = prev->device->fromOutPort(outPrev);
         for(auto nextToCur: fromOutPort) {
             auto curVnode = nextToCur->prev;
-            printf("%svl %d-%d calling prepareCalc on vl %d-%d\n",
-                   debugPrefix.c_str(), vl->id, device->id, curVnode->vl->id, curVnode->device->id); // DEBUG
+//            printf("%svl %d-%d calling prepareCalc on vl %d-%d\n",
+//                   debugPrefix.c_str(), vl->id, device->id, curVnode->vl->id, curVnode->device->id); // DEBUG
+//            printf("%svl %d-%d calling prepareCalc on vl %d-%d\n",
+//                   "", vl->id, device->id, curVnode->vl->id, curVnode->device->id); // DEBUG
             err = curVnode->prepareCalc(++chainSize, debugPrefix+"\t");
             if(err) {
                 return err;
@@ -146,6 +148,13 @@ Error Vnode::prepareCalc(int chainSize, std::string debugPrefix) const { // DEBU
         }
         in->delays->setInDelays(requiredDelays);
         err = in->delays->calc(vl->id);
+        // DEBUG
+//        for(auto [vlId, delay]: requiredDelays) {
+//            printf("in delays: [vl %d] dmax=%ld dmin=%ld\n", vlId, delay.dmax(), delay.dmin());
+//        }
+//        auto outDelay = in->delays->getDelay(vl->id);
+//        printf("out delay: [vl %d] dmax=%ld dmin=%ld\n", vl->id, outDelay.dmax(), outDelay.dmin());
+        // /DEBUG
         if(err) {
             return err;
         }

@@ -5,7 +5,13 @@
 #include "tinyxml2/tinyxml2.h"
 #include "algo.h"
 
-VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme);
+constexpr int cellSizeDefault = 10; // bytes
+constexpr int voqPeriodDefault = 100; // cells
+constexpr double jitStartDefault = 0.5; // ms
+constexpr int sminDefault = 64; // bytes
+
+VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme,
+        int cellSize = cellSizeDefault, int voqPeriod = voqPeriodDefault);
 
 // doc must already contain the resources and VL configuration
 // (e.g. doc used for building config)

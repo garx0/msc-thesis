@@ -21,14 +21,14 @@ std::vector<int> TokenizeCsv(const std::string& str) {
     return res;
 }
 
-VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme) {
+VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme, int cellSize, int voqPeriod) {
     VlinkConfigOwn config = std::make_unique<VlinkConfig>();
     auto afdxxml = doc.FirstChildElement("afdxxml");
     auto resources = afdxxml->FirstChildElement("resources");
     double cap = std::stof(resources->FirstChildElement("link")->Attribute("capacity"));
     config->linkRate = cap;
-    config->cellSize = 10; // TODO
-    config->voqL = 100; // TODO
+    config->cellSize = cellSize;
+    config->voqL = voqPeriod;
     config->scheme = scheme;
 
     for(auto res = resources->FirstChildElement("link");
@@ -89,8 +89,17 @@ VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme) {
     {
         std::vector<std::vector<int>> paths;
         int number = std::stoi(vl->Attribute("number"));
+        // DEBUG
+        if(number % 50 != 0) {
+            continue;
+        }
+        // /DEBUG
         int bag = std::stoi(vl->Attribute("bag"));
+        int smin = sminDefault; // default
         int smax = std::stoi(vl->Attribute("lmax"));
+        auto jitStr = vl->Attribute("jitStart"); // in us
+//        double jit0 = jitStr ? (std::stof(jitStr) / 1e3) : jitStartDefault; // in ms
+        double jit0 = 0.0; // DEBUG
         for(auto pathEl = vl->FirstChildElement("path");
             pathEl != nullptr;
             pathEl = pathEl->NextSiblingElement("path"))
@@ -98,14 +107,13 @@ VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme) {
             std::vector<int> path = TokenizeCsv(pathEl->Attribute("path"));
             assert(!path.empty() && path[path.size()-1] == std::stoi(pathEl->Attribute("dest")));
             paths.push_back(path);
-            printf("VL %s path to %s\n", vl->Attribute("number"), pathEl->Attribute("dest"));
+//            printf("VL %s path to %s\n", vl->Attribute("number"), pathEl->Attribute("dest")); // DEBUG
         }
-        double jit0 = 0; // TODO взять из xml, если есть, иначе 0 или 0.5
-        int smin = 64; // default
         config->vlinks[number] = std::make_unique<Vlink>(config.get(), number, paths, bag, smax, smin, jit0);
     }
     config->calcChainMaxSize();
-    printf("chainMaxSize = %d\n", config->chainMaxSize); // DEBUG
+    printf("%ld vlinks\n", config->vlinks.size()); // DEBUG
+    printf("chainMaxSize = %ld\n", config->chainMaxSize); // DEBUG
     return config;
 }
 
@@ -132,6 +140,7 @@ bool toXml(VlinkConfig* config, tinyxml2::XMLDocument& doc) {
         vlEl = vlEl->NextSiblingElement("virtualLink"))
     {
         int number = std::stoi(vlEl->Attribute("number"));
+        printf("getting vl that may be absent\n"); // DEBUG
         Vlink* vl = config->getVlink(number);
         for(auto path = vlEl->FirstChildElement("path");
             path != nullptr;
