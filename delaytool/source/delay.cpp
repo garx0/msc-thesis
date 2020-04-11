@@ -105,6 +105,27 @@ Error Voq::completeCheck(Device *sw) {
     return Error::Success;
 }
 
+void Voq::calcOutPrevLoad() {
+    if(loadReady) {
+        return;
+    }
+    calcVlinkLoad();
+    Device* prevSwitch = nullptr;
+    for(auto [vlId, load]: vlinkLoad) {
+        prevSwitch = port->vnodes[vlId]->prev->device;
+        assert(prevSwitch->type == Device::Switch);
+        break;
+    }
+    for(auto [vlId, load]: vlinkLoad) {
+        Vnode *prevNode = port->vnodes[vlId]->prev;
+        assert(prevNode->device->id == prevSwitch->id);
+        outPrevLoad.Inc(prevNode->in->id, load);
+        outPrevLoadSum += load;
+        break;
+    }
+    loadReady = true;
+}
+
 void VoqA::calcVlinkLoad() {
     for(auto [vlId, delay]: inDelays) {
         assert(delay.ready());

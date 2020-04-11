@@ -3,6 +3,7 @@
 #include <vector>
 #include <cmath>
 #include <random>
+#include <chrono>
 #include "algo.h"
 #include "delay.h"
 
@@ -54,6 +55,21 @@ std::vector<Vnode*> Device::fromOutPort(int portId) const {
     return ans;
 }
 
+Port* Device::getPort(int portId) const {
+    auto found = ports.find(portId);
+    assert(found != ports.end());
+    return found->second.get();
+}
+
+std::vector<Port*> Device::getAllPorts() const {
+    std::vector<Port*> res;
+    res.reserve(ports.size());
+    for(const auto& pair: ports) {
+        res.push_back(pair.second.get());
+    }
+    return res;
+}
+
 Port::Port(Device* device, int id)
     : id(id), device(device)
 {
@@ -63,6 +79,21 @@ Port::Port(Device* device, int id)
     int prevDeviceId = config->portDevice(outPrev);
     prevDevice = config->getDevice(prevDeviceId);
     delays = config->factory->Create(config->scheme, this);
+}
+
+Vnode* Port::getVnode(int vlId) const {
+    auto found = vnodes.find(vlId);
+    assert(found != vnodes.end());
+    return found->second;
+}
+
+std::vector<Vnode*> Port::getAllVnodes() const {
+    std::vector<Vnode*> res;
+    res.reserve(vnodes.size());
+    for(const auto& pair: vnodes) {
+        res.push_back(pair.second);
+    }
+    return res;
 }
 
 Vlink::Vlink(VlinkConfig* config, int id, std::vector<std::vector<int>> paths,
@@ -199,6 +230,40 @@ Error Vnode::prepareCalc(std::string debugPrefix) { // DEBUG in signature
     return Error::Success;
 }
 
+Error Vnode::calcE2e() {
+    Error err = prepareCalc();
+    if(!err) {
+        e2e = in->delays->e2e(vl->id);
+    }
+    return err;
+}
+
+Vnode* Vnode::selectNext(int deviceId) const {
+    for(const auto &own: next) {
+        if(own->device->id == deviceId) {
+            return own.get();
+        }
+    }
+    return nullptr;
+}
+
+std::vector<const Vnode*> Vnode::getAllDests() const {
+    std::vector<const Vnode*> vec;
+    _getAllDests(vec);
+    return vec;
+}
+
+void Vnode::_getAllDests(std::vector<const Vnode*> &vec) const {
+    if(next.empty()) {
+        assert(device->type == Device::End);
+        vec.push_back(this);
+        return;
+    }
+    for(const auto& nxt: next) {
+        nxt->_getAllDests(vec);
+    }
+}
+
 Error VlinkConfig::calcE2e(bool print) {
     for(auto vl: getAllVlinks()) {
         for(auto [_, vnode]: vl->dst) {
@@ -250,6 +315,74 @@ Error VlinkConfig::detectCycles(bool shuffle) {
     return Error::Success;
 }
 
+Vlink* VlinkConfig::getVlink(int id) const {
+    auto found = vlinks.find(id);
+    assert(found != vlinks.end());
+    return found->second.get();
+}
+
+Device* VlinkConfig::getDevice(int id) const {
+    auto found = devices.find(id);
+    assert(found != devices.end());
+    return found->second.get();
+}
+
+int VlinkConfig::connectedPort(int portId) const {
+    auto found = links.find(portId);
+    assert(found != links.end());
+    return found->second;
+}
+
+int VlinkConfig::portDevice(int portId) const {
+    auto found = _portDevice.find(portId);
+    assert(found != _portDevice.end());
+    return found->second;
+}
+
+std::vector<Vlink*> VlinkConfig::getAllVlinks() const {
+    std::vector<Vlink*> res;
+    res.reserve(vlinks.size());
+    for(const auto& pair: vlinks) {
+        res.push_back(pair.second.get());
+    }
+    return res;
+}
+
+std::vector<Device*> VlinkConfig::getAllDevices() const {
+    std::vector<Device*> res;
+    res.reserve(devices.size());
+    for(const auto& pair: devices) {
+        res.push_back(pair.second.get());
+    }
+    return res;
+}
+
+void PortDelays::setInDelays(const std::map<int, DelayData> &values) {
+    inDelays = values;
+    _ready = true;
+}
+
+Error PortDelays::calc(int vl, bool first) {
+    if(delays[vl].ready()) {
+        return Error::Success;
+    }
+    if(!first) {
+//            auto start = std::chrono::high_resolution_clock::now(); // DEBUG
+        auto err = calcCommon(vl);
+//            printf("[port %d %*s] (vl %d calcCommon) %lu indelays, %lu delays : %ld us\n", port->id, 40, type.c_str(), vl, inDelays.size(), delays.size(),
+//                   std::chrono::duration_cast<std::chrono::microseconds>((std::chrono::high_resolution_clock::now() - start)).count()); // DEBUG
+        return err;
+    } else {
+        return calcFirst(vl);
+    }
+}
+
+DelayData PortDelays::getFromMap(int vl, const std::map<int, DelayData> &delaysMap) {
+    auto found = delaysMap.find(vl);
+    assert(found != delaysMap.end());
+    return found->second;
+}
+
 // register Creators for all PortDelays types
 void PortDelaysFactory::RegisterAll() {
     AddCreator<Mock>("Mock");
@@ -267,5 +400,19 @@ PortDelaysOwn PortDelaysFactory::Create(const std::string& name, Port* port) {
         return found->second->Create(port);
     } else {
         throw std::logic_error("invalid PortDelays type");
+    }
+}
+
+int defaultIntMap::Get(int key) {
+    auto found = find(key);
+    return found == end() ? 0 : found->second;
+}
+
+void defaultIntMap::Inc(int key, int val) {
+    auto found = find(key);
+    if(found == end()) {
+        (*this)[key] = val;
+    } else {
+        (*this)[key] += val;
     }
 }

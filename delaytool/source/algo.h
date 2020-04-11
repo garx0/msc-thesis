@@ -9,7 +9,6 @@
 #include <map>
 #include <cassert>
 #include <set>
-//#include <chrono>
 #include "algo.h"
 
 class Vlink;
@@ -118,47 +117,17 @@ public:
     std::map<int, int> links;
     PortDelaysFactoryOwn factory;
 
-    Vlink* getVlink(int id) const {
-        auto found = vlinks.find(id);
-        assert(found != vlinks.end());
-        return found->second.get();
-    }
+    Vlink* getVlink(int id) const;
 
-    Device* getDevice(int id) const {
-        auto found = devices.find(id);
-        assert(found != devices.end());
-        return found->second.get();
-    }
+    Device* getDevice(int id) const;
 
-    int connectedPort(int portId) const {
-        auto found = links.find(portId);
-        assert(found != links.end());
-        return found->second;
-    }
+    int connectedPort(int portId) const;
 
-    int portDevice(int portId) const {
-        auto found = _portDevice.find(portId);
-        assert(found != _portDevice.end());
-        return found->second;
-    }
+    int portDevice(int portId) const;
 
-    std::vector<Vlink*> getAllVlinks() const {
-        std::vector<Vlink*> res;
-        res.reserve(vlinks.size());
-        for(const auto& pair: vlinks) {
-            res.push_back(pair.second.get());
-        }
-        return res;
-    }
+    std::vector<Vlink*> getAllVlinks() const;
 
-    std::vector<Device*> getAllDevices() const {
-        std::vector<Device*> res;
-        res.reserve(devices.size());
-        for(const auto& pair: devices) {
-            res.push_back(pair.second.get());
-        }
-        return res;
-    }
+    std::vector<Device*> getAllDevices() const;
 
     // random order of vlinks and destinations processing if shuffle=true
     // prints delays if print=true
@@ -166,9 +135,7 @@ public:
 
     Error detectCycles(bool shuffle = false);
 
-    double linkByte2ms(int64_t linkByte) {
-        return static_cast<double>(linkByte) / linkRate;
-    }
+    double linkByte2ms(int64_t linkByte) { return static_cast<double>(linkByte) / linkRate; }
 };
 
 class Vlink
@@ -208,20 +175,9 @@ public:
     std::map<int, PortOwn> ports; // input ports
     std::vector<Vlink*> sourceFor; // Vlinks which have this device as source
 
-    Port* getPort(int portId) const {
-        auto found = ports.find(portId);
-        assert(found != ports.end());
-        return found->second.get();
-    }
+    Port* getPort(int portId) const;
 
-    std::vector<Port*> getAllPorts() const {
-        std::vector<Port*> res;
-        res.reserve(ports.size());
-        for(const auto& pair: ports) {
-            res.push_back(pair.second.get());
-        }
-        return res;
-    }
+    std::vector<Port*> getAllPorts() const;
 
     // get vnodes coming from output port by port id
     // i.e. vnodes in which prev->device == this and in->outPrev == portId
@@ -242,20 +198,9 @@ public:
 
     Port(Device* device, int number);
 
-    Vnode* getVnode(int vlId) const {
-        auto found = vnodes.find(vlId);
-        assert(found != vnodes.end());
-        return found->second;
-    }
+    Vnode* getVnode(int vlId) const;
 
-    std::vector<Vnode*> getAllVnodes() const {
-        std::vector<Vnode*> res;
-        res.reserve(vnodes.size());
-        for(const auto& pair: vnodes) {
-            res.push_back(pair.second);
-        }
-        return res;
-    }
+    std::vector<Vnode*> getAllVnodes() const;
 };
 
 // time is measured in bytes through link = (time in ms) * (link rate in byte/ms) / (1 byte)
@@ -290,10 +235,7 @@ public:
     Port* const port;
     std::string type;
 
-    void setInDelays(const std::map<int, DelayData>& values) {
-        inDelays = values;
-        _ready = true;
-    }
+    void setInDelays(const std::map<int, DelayData>& values);
 
     bool ready() { return _ready; }
 
@@ -305,20 +247,7 @@ public:
 
     const std::map<int, DelayData>& getInDelays() const { return inDelays; }
 
-    Error calc(int vl, bool first = false) {
-        if(delays[vl].ready()) {
-            return Error::Success;
-        }
-        if(!first) {
-//            auto start = std::chrono::high_resolution_clock::now(); // DEBUG
-            auto err = calcCommon(vl);
-//            printf("[port %d %*s] (vl %d calcCommon) %lu indelays, %lu delays : %ld us\n", port->id, 40, type.c_str(), vl, inDelays.size(), delays.size(),
-//                   std::chrono::duration_cast<std::chrono::microseconds>((std::chrono::high_resolution_clock::now() - start)).count()); // DEBUG
-            return err;
-        } else {
-            return calcFirst(vl);
-        }
-    }
+    Error calc(int vl, bool first = false);
 
     // outDelay[vl] must have been calculated prior to call of this method
     virtual DelayData e2e(int vl) const = 0;
@@ -336,11 +265,7 @@ protected:
     std::map<int, DelayData> inDelays;
     bool _ready;
 
-    static DelayData getFromMap(int vl, const std::map<int, DelayData>& delaysMap) {
-        auto found = delaysMap.find(vl);
-        assert(found != delaysMap.end());
-        return found->second;
-    }
+    static DelayData getFromMap(int vl, const std::map<int, DelayData>& delaysMap);
 };
 
 class Vnode
@@ -362,47 +287,22 @@ public:
     DelayData e2e;
 
     // random order of data dependency graph traversal if shuffle=true
-    Error calcE2e() {
-        Error err = prepareCalc();
-        if(!err) {
-            e2e = in->delays->e2e(vl->id);
-        }
-        return err;
-    }
+    Error calcE2e();
 
     Error prepareTest(bool shuffle = false);
 
-    Vnode* selectNext(int deviceId) const {
-        for(const auto &own: next) {
-            if(own->device->id == deviceId) {
-                return own.get();
-            }
-        }
-        return nullptr;
-    }
+    Vnode* selectNext(int deviceId) const;
 
     // get ids of all devices which are leafs of this node's subtree
-    std::vector<const Vnode*> getAllDests() const {
-        std::vector<const Vnode*> vec;
-        _getAllDests(vec);
-        return vec;
-    }
+    std::vector<const Vnode*> getAllDests() const;
 
 private:
     // prepare input delay data for calculation of delay of this vnode AND calculate this delay
     // random order of data dependency graph traversal if shuffle=true
     Error prepareCalc(std::string debugPrefix = ""); // DEBUG in signature
 
-    void _getAllDests(std::vector<const Vnode*>& vec) const {
-        if(next.empty()) {
-            assert(device->type == Device::End);
-            vec.push_back(this);
-            return;
-        }
-        for(const auto& nxt: next) {
-            nxt->_getAllDests(vec);
-        }
-    }
+    // recursive helper function for getAllDests()
+    void _getAllDests(std::vector<const Vnode*>& vec) const;
 };
 
 class Mock : public PortDelays
@@ -421,21 +321,12 @@ class defaultIntMap : public std::map<int, int> {
 public:
     defaultIntMap() = default;
 
-    int Get(int key) {
-        auto found = find(key);
-        return found == end() ? 0 : found->second;
-    }
+    int Get(int key);
 
-    void Inc(int key, int val) {
-        auto found = find(key);
-        if(found == end()) {
-            (*this)[key] = val;
-        } else {
-            (*this)[key] += val;
-        }
-    }
+    void Inc(int key, int val);
 };
 
+// base class for VoqA and VoqB
 class Voq : public PortDelays
 {
 public:
@@ -455,26 +346,7 @@ public:
     // is information about input load (outPrevLoad and its sum) ready
     bool loadReady;
 
-    void calcOutPrevLoad() {
-        if(loadReady) {
-            return;
-        }
-        calcVlinkLoad();
-        Device* prevSwitch = nullptr;
-        for(auto [vlId, load]: vlinkLoad) {
-            prevSwitch = port->vnodes[vlId]->prev->device;
-            assert(prevSwitch->type == Device::Switch);
-            break;
-        }
-        for(auto [vlId, load]: vlinkLoad) {
-            Vnode *prevNode = port->vnodes[vlId]->prev;
-            assert(prevNode->device->id == prevSwitch->id);
-            outPrevLoad.Inc(prevNode->in->id, load);
-            outPrevLoadSum += load;
-            break;
-        }
-        loadReady = true;
-    }
+    void calcOutPrevLoad();
 
     virtual void calcVlinkLoad() = 0;
 };
@@ -533,7 +405,7 @@ private:
     int64_t delayFuncRemConstPart;
 };
 
-// OqA without packet FIFO
+// OqB without packet FIFO
 class OqCellB : public PortDelays
 {
 public:
@@ -601,7 +473,6 @@ public:
     // is to unite TCreator objects creating different PortDelays under one type
     class ICreator {
     public:
-
         ICreator() = default;
         virtual ~ICreator() = default;
         virtual PortDelaysOwn Create(Port*) const = 0;
@@ -611,12 +482,20 @@ public:
     template<typename TPortDelays>
     class TCreator : public ICreator {
     public:
-        PortDelaysOwn Create(Port*) const override;
+        PortDelaysOwn Create(Port* port) const override {
+            if constexpr(std::is_constructible_v<TPortDelays, decltype(port)>) {
+                return std::make_unique<TPortDelays>(port);
+            } else {
+                throw std::logic_error("can't make PortDelays with these argument types");
+            }
+        }
     };
 
     // register TCreator<TPortDelays> at specified name
     template<typename TPortDelays>
-    void AddCreator(const std::string& name);
+    void AddCreator(const std::string& name) {
+        creators[name] = std::make_shared<PortDelaysFactory::TCreator<TPortDelays>>();
+    }
 
     // calls corresponding Create method of Creator registered at specified name
     PortDelaysOwn Create(const std::string& name, Port*);
@@ -625,19 +504,5 @@ private:
     using TCreatorPtr = std::shared_ptr<ICreator>;
     std::map<std::string, TCreatorPtr> creators;
 };
-
-template<typename TPortDelays>
-PortDelaysOwn PortDelaysFactory::TCreator<TPortDelays>::Create(Port* port) const {
-    if constexpr (std::is_constructible_v<TPortDelays, decltype(port)>) {
-        return std::make_unique<TPortDelays>(port);
-    } else {
-        throw std::logic_error("can't make PortDelays with these argument types");
-    }
-}
-
-template<typename TPortDelays>
-void PortDelaysFactory::AddCreator(const std::string& name) {
-    creators[name] = std::make_shared<PortDelaysFactory::TCreator<TPortDelays>>();
-}
 
 #endif //DELAYTOOL_ALGO_H
