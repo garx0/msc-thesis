@@ -216,15 +216,16 @@ Error TwoSchemes<Scheme1, Scheme2>::calcCommon(int curVlId) {
     if(!midDelaysReady) {
         scheme1.setInDelays(inDelays);
         for(auto [vlId, _]: inDelays) {
-            Error err = scheme1.calcCommon(vlId);
+            Error err = scheme1.calc(vlId);
             if(err) {
                 return err;
             }
         }
         scheme2.setInDelays(scheme1.getDelays());
+//        printf("counted middelays\n");
         midDelaysReady = true;
     }
-    Error err = scheme2.calcCommon(curVlId);
+    Error err = scheme2.calc(curVlId);
     if(err) {
         return err;
     }

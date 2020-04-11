@@ -9,6 +9,7 @@
 #include <map>
 #include <cassert>
 #include <set>
+//#include <chrono>
 #include "algo.h"
 
 class Vlink;
@@ -282,10 +283,12 @@ private:
 class PortDelays
 {
 public:
-    explicit PortDelays(Port* port): config(port->device->config), port(port), _ready(false) {}
+    explicit PortDelays(Port* port, const std::string& type)
+    : config(port->device->config), port(port), type(type), _ready(false) {}
 
     VlinkConfig* const config;
     Port* const port;
+    std::string type;
 
     void setInDelays(const std::map<int, DelayData>& values) {
         inDelays = values;
@@ -307,7 +310,11 @@ public:
             return Error::Success;
         }
         if(!first) {
-            return calcCommon(vl);
+//            auto start = std::chrono::high_resolution_clock::now(); // DEBUG
+            auto err = calcCommon(vl);
+//            printf("[port %d %*s] (vl %d calcCommon) %lu indelays, %lu delays : %ld us\n", port->id, 40, type.c_str(), vl, inDelays.size(), delays.size(),
+//                   std::chrono::duration_cast<std::chrono::microseconds>((std::chrono::high_resolution_clock::now() - start)).count()); // DEBUG
+            return err;
         } else {
             return calcFirst(vl);
         }
@@ -401,7 +408,7 @@ private:
 class Mock : public PortDelays
 {
 public:
-    Mock(Port* port): PortDelays(port) {}
+    Mock(Port* port): PortDelays(port, "Mock") {}
 
     DelayData e2e(int vl) const override;
 
@@ -432,7 +439,7 @@ public:
 class Voq : public PortDelays
 {
 public:
-    Voq(Port* port): PortDelays(port), outPrevLoadSum(0), loadReady(false) {}
+    Voq(Port* port, const std::string& type): PortDelays(port, type), outPrevLoadSum(0), loadReady(false) {}
 
     static Error completeCheck(Device *device);
 
@@ -475,7 +482,7 @@ public:
 class VoqA : public Voq
 {
 public:
-    explicit VoqA(Port* port): Voq(port) {}
+    explicit VoqA(Port* port): Voq(port, "VoqA") {}
 
     DelayData e2e(int vl) const override;
 
@@ -489,7 +496,7 @@ public:
 class VoqB : public Voq
 {
 public:
-    explicit VoqB(Port* port): Voq(port) { }
+    explicit VoqB(Port* port): Voq(port, "VoqB") { }
 
     DelayData e2e(int vl) const override;
 
@@ -506,7 +513,7 @@ class OqPacket : public PortDelays
 {
 public:
     explicit OqPacket(Port* port)
-    : PortDelays(port), bp(-1),
+    : PortDelays(port, "OqPacket<" + std::to_string(cells) + ">"), bp(-1),
       delayFuncRemConstPart(std::numeric_limits<int64_t>::min()) {}
 
     DelayData e2e(int vl) const override;
@@ -531,7 +538,7 @@ class OqCellB : public PortDelays
 {
 public:
     explicit OqCellB(Port* port)
-    : PortDelays(port), bp(-1),
+    : PortDelays(port, "OqCellB"), bp(-1),
       delayFuncRemConstPart(std::numeric_limits<int64_t>::min()) {}
 
     DelayData e2e(int vl) const override;
@@ -559,7 +566,10 @@ class TwoSchemes : public PortDelays
             "parameters of TwoSchemes must inherit from PortDelays");
 public:
     explicit TwoSchemes(Port* port)
-    : PortDelays(port), midDelaysReady(false), scheme1(port), scheme2(port) {}
+    : PortDelays(port, "TwoSchemes"), midDelaysReady(false), scheme1(port), scheme2(port)
+    {
+        type += "<" + scheme1.type + ", " + scheme2.type + ">";
+    }
 
     DelayData e2e(int vl) const override;
 

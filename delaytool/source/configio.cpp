@@ -92,6 +92,7 @@ VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme, in
         int smax = std::stoi(vl->Attribute("lmax"));
         auto jitStr = vl->Attribute("jitStart"); // in us
         double jit0 = jitStr ? (std::stof(jitStr) / 1e3) : jitStartDefault; // in ms
+//        double jit0 = 0.0;
         for(auto pathEl = vl->FirstChildElement("path");
             pathEl != nullptr;
             pathEl = pathEl->NextSiblingElement("path"))

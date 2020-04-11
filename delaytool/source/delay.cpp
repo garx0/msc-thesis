@@ -34,6 +34,7 @@ int64_t busyPeriod(const std::map<int, DelayData>& inDelays, VlinkConfig* config
 //    if(it > 1) {
 //        printf("\t\t\t\tBP CALCULATED IN %d ITERATIONS\n", it); // DEBUG
 //    }
+//    printf("bp<%d> = %ld\n", byTick, bp); // DEBUG
     return bp;
 }
 

@@ -54,6 +54,16 @@ int main(int argc, char* argv[]) {
             .action([](const std::string& value) { return std::stoi(value); })
             .default_value(voqPeriodDefault);
 
+    program.add_argument("--printconfig")
+            .implicit_value(true)
+            .default_value(false)
+            .help("print verbose info about resources and VL configuration");
+
+    program.add_argument("--printdelays")
+            .implicit_value(true)
+            .default_value(false)
+            .help("print calculated E2E delays");
+
     try {
         program.parse_args(argc, argv);
     } catch (const std::runtime_error& err) {
@@ -66,6 +76,8 @@ int main(int argc, char* argv[]) {
     std::string scheme = program.get<std::string>("--scheme");
     int cellSize = program.get<int>("--cellsize");
     int voqPeriod = program.get<int>("--periodvoq");
+    bool printConfig = program.get<bool>("--printconfig");
+    bool printDelays = program.get<bool>("--printdelays");
 
     tinyxml2::XMLDocument doc;
     auto err = doc.LoadFile(fileIn.c_str());
@@ -84,7 +96,9 @@ int main(int argc, char* argv[]) {
         fclose(fpOut);
         return 0;
     }
-//    DebugInfo(config.get()); // DEBUG
+    if(printConfig) {
+        DebugInfo(config.get()); // DEBUG
+    }
     Error calcErr = config->detectCycles(false);
     if(calcErr) {
         fprintf(stderr, "error calculating delay because of bad VL configuration: %s, %s\n",
@@ -92,7 +106,7 @@ int main(int argc, char* argv[]) {
         fclose(fpOut);
         return 0;
     }
-    calcErr = config->calcE2e(false);
+    calcErr = config->calcE2e(printDelays);
     if(calcErr) {
         fprintf(stderr, "error calculating delay because of bad VL configuration: %s, %s\n",
                 calcErr.TypeString().c_str(), calcErr.Verbose().c_str());
