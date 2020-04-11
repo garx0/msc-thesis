@@ -2,8 +2,23 @@
 #include <cstdio>
 #include <vector>
 #include <cmath>
+#include <random>
 #include "algo.h"
 #include "delay.h"
+
+std::vector<int> idxRange(int size, bool shuffle) {
+    std::vector<int> res;
+    res.reserve(size);
+    for(int i = 0; i < size; i++) {
+        res.push_back(i);
+    }
+    if(shuffle) {
+        for(int i = size - 1; i > 0; i--) {
+            std::swap(res[i], res[rand() % i]);
+        }
+    }
+    return res;
+}
 
 bool operator==(Error::ErrorType lhs, const Error& rhs) {
     return lhs == rhs.type;
@@ -11,23 +26,6 @@ bool operator==(Error::ErrorType lhs, const Error& rhs) {
 
 bool operator!=(Error::ErrorType lhs, const Error& rhs) {
     return lhs != rhs.type;
-}
-
-int treeSize(const Vnode* vnode) {
-    int s = 1;
-    for(const auto& own: vnode->next) {
-        s += treeSize(own.get());
-    }
-    return s;
-}
-
-void VlinkConfig::calcChainMaxSize() {
-    // посчитать сумму размеров деревьев vnode - 1
-    int s = 0;
-    for(auto vl: getAllVlinks()) {
-        s += treeSize(vl->src.get()) - 1;
-    }
-    chainMaxSize = s;
 }
 
 void Device::AddPorts(const std::vector<int>& portIds) {
@@ -100,7 +98,7 @@ Vlink::Vlink(VlinkConfig* config, int id, std::vector<std::vector<int>> paths,
 
 Vnode::Vnode(Vlink* vlink, int deviceId, Vnode* prev)
     : config(vlink->config), vl(vlink),
-      prev(prev), device(vlink->config->getDevice(deviceId)), e2e()
+      prev(prev), device(vlink->config->getDevice(deviceId)), cycleState(NotVisited), calcPrepared(false), e2e()
 {
     if(prev != nullptr) {
         // find port by prev->device
@@ -121,60 +119,101 @@ Vnode::Vnode(Vlink* vlink, int deviceId, Vnode* prev)
     }
 }
 
-Error Vnode::prepareCalc(int chainSize, std::string debugPrefix) const { // DEBUG in signature
-    if(chainSize > config->chainMaxSize) {
-        return Error::Cycle;
+Error Vnode::prepareTest(bool shuffle) {
+    if(cycleState == NotVisited) {
+        cycleState = VisitedNotPrepared;
+    } else if(cycleState == VisitedNotPrepared) {
+        std::string verbose =
+                std::string("cycle: entered VL ")
+                + std::to_string(vl->id)
+                + " device "
+                + std::to_string(device->id)
+                + " again. suggestion: delete VL "
+                + std::to_string(vl->id)
+                + " paths to end systems:";
+        std::string verboseRaw = std::to_string(vl->id);
+        for(auto dest: getAllDests()) {
+            verbose += " " + std::to_string(dest->device->id);
+            verboseRaw += " " + std::to_string(dest->device->id);
+        }
+        return Error(Error::Cycle, verbose, verboseRaw);
     }
+    assert(prev != nullptr);
+    if(prev->prev != nullptr) {
+        auto fromOutPort = prev->device->fromOutPort(outPrev);
+        auto order = idxRange(fromOutPort.size(), shuffle);
+        for(auto idx: order) {
+            auto curVnode = fromOutPort[idx]->prev;
+            if(curVnode->cycleState != Prepared) {
+                Error err = curVnode->prepareTest(shuffle);
+                if(err) {
+                    return err;
+                }
+            }
+//            printf("%svl %d-%d calling prepareCalc on vl %d-%d\n",
+//                   "", vl->id, device->id, curVnode->vl->id, curVnode->device->id); // DEBUG
+        }
+    }
+    cycleState = Prepared;
+    return Error::Success;
+}
+
+Error Vnode::prepareCalc(std::string debugPrefix) { // DEBUG in signature
     assert(prev != nullptr);
     if(prev->prev == nullptr) {
         in->delays->calc(vl->id, true);
     } else {
         Error err;
         std::map<int, DelayData> requiredDelays;
-        auto fromOutPort = prev->device->fromOutPort(outPrev);
-        for(auto nextToCur: fromOutPort) {
-            auto curVnode = nextToCur->prev;
+        for(auto vnodeNext: prev->device->fromOutPort(outPrev)) {
+            auto curVnode = vnodeNext->prev;
+            if(!curVnode->calcPrepared) {
+                err = curVnode->prepareCalc(debugPrefix+"  ");
+                if(err) {
+                    return err;
+                }
+            }
 //            printf("%svl %d-%d calling prepareCalc on vl %d-%d\n",
 //                   debugPrefix.c_str(), vl->id, device->id, curVnode->vl->id, curVnode->device->id); // DEBUG
 //            printf("%svl %d-%d calling prepareCalc on vl %d-%d\n",
 //                   "", vl->id, device->id, curVnode->vl->id, curVnode->device->id); // DEBUG
-            err = curVnode->prepareCalc(++chainSize, debugPrefix+"\t");
-            if(err) {
-                return err;
-            }
             int vlId = curVnode->vl->id;
-            requiredDelays[vlId] = curVnode->in->delays->getDelay(vlId);
-            assert(curVnode->in->delays->getDelay(vlId).ready());
+            auto delay = curVnode->in->delays->getDelay(vlId);
+            assert(delay.ready());
+            requiredDelays[vlId] = delay;
         }
         in->delays->setInDelays(requiredDelays);
         err = in->delays->calc(vl->id);
-        // DEBUG
+        if(err) {
+            return err;
+        }
+            // DEBUG
 //        for(auto [vlId, delay]: requiredDelays) {
 //            printf("in delays: [vl %d] dmax=%ld dmin=%ld\n", vlId, delay.dmax(), delay.dmin());
 //        }
 //        auto outDelay = in->delays->getDelay(vl->id);
 //        printf("out delay: [vl %d] dmax=%ld dmin=%ld\n", vl->id, outDelay.dmax(), outDelay.dmin());
-        // /DEBUG
-        if(err) {
-            return err;
-        }
+            // /DEBUG
     }
+    calcPrepared = true;
     return Error::Success;
 }
 
-Error VlinkConfig::calcE2e() {
+Error VlinkConfig::calcE2e(bool print) {
     for(auto vl: getAllVlinks()) {
         for(auto [_, vnode]: vl->dst) {
-            printf("\ncalling calcE2e on vlink %d device %d\n", vl->id, vnode->device->id); // DEBUG
+            //        printf("\ncalling calcE2e on vlink %d device %d\n", vnode->vl->id, vnode->device->id); // DEBUG
             Error err = vnode->calcE2e();
             if(err) {
                 return err;
             }
-            DelayData e2e = vnode->e2e; // DEBUG
-            printf("VL %d to %d: maxDelay = %li lB (%.1f us), jit = %li lB (%.1f us)\n",
-                    vl->id, vnode->device->id,
-                    e2e.dmax(), linkByte2ms(e2e.dmax()) * 1e3,
-                    e2e.jit(), linkByte2ms(e2e.jit()) * 1e3); // DEBUG
+            if(print) {
+                DelayData e2e = vnode->e2e;
+                printf("VL %d to %d: maxDelay = %li lB (%.1f us), jit = %li lB (%.1f us)\n",
+                       vnode->vl->id, vnode->device->id,
+                       e2e.dmax(), linkByte2ms(e2e.dmax()) * 1e3,
+                       e2e.jit(), linkByte2ms(e2e.jit()) * 1e3);
+            }
         }
     }
     if(scheme == "voqa" || scheme == "voqb") {
@@ -187,6 +226,25 @@ Error VlinkConfig::calcE2e() {
             if(err) {
                 return err;
             }
+        }
+    }
+    return Error::Success;
+}
+
+Error VlinkConfig::detectCycles(bool shuffle) {
+    std::vector<Vnode*> dests;
+    for(auto vl: getAllVlinks()) {
+        for(auto [_, vnode]: vl->dst) {
+            dests.push_back(vnode);
+        }
+    }
+    auto order = idxRange(dests.size(), shuffle);
+    for(auto idx: order) {
+        auto vnode = dests[idx];
+//        printf("\ncalling calcE2e on vlink %d device %d\n", vnode->vl->id, vnode->device->id); // DEBUG
+        Error err = vnode->prepareTest(shuffle);
+        if(err) {
+            return err;
         }
     }
     return Error::Success;

@@ -10,6 +10,8 @@ constexpr int voqPeriodDefault = 100; // cells
 constexpr double jitStartDefault = 0.5; // ms
 constexpr int sminDefault = 64; // bytes
 
+std::vector<int> TokenizeCsv(const std::string& str);
+
 VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme,
         int cellSize = cellSizeDefault, int voqPeriod = voqPeriodDefault);
 

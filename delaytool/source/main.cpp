@@ -84,8 +84,15 @@ int main(int argc, char* argv[]) {
         fclose(fpOut);
         return 0;
     }
-    DebugInfo(config.get()); // DEBUG
-    Error calcErr = config->calcE2e();
+//    DebugInfo(config.get()); // DEBUG
+    Error calcErr = config->detectCycles(false);
+    if(calcErr) {
+        fprintf(stderr, "error calculating delay because of bad VL configuration: %s, %s\n",
+                calcErr.TypeString().c_str(), calcErr.Verbose().c_str());
+        fclose(fpOut);
+        return 0;
+    }
+    calcErr = config->calcE2e(false);
     if(calcErr) {
         fprintf(stderr, "error calculating delay because of bad VL configuration: %s, %s\n",
                 calcErr.TypeString().c_str(), calcErr.Verbose().c_str());

@@ -52,7 +52,6 @@ VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme, in
         res != nullptr;
         res = res->NextSiblingElement("endSystem"))
     {
-        printf("ES %s\n", res->Attribute("number"));
         std::vector<int> ports = TokenizeCsv(res->Attribute("ports"));
         if(ports.size() != 1) {
             std::cerr << "error: bad input - end systems must have one port" << std::endl;
@@ -75,7 +74,6 @@ VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme, in
         }
         config->devices[number] = std::make_unique<Device>(config.get(), Device::Switch, number);
         portNums[number] = ports;
-        printf("switch %s\n", res->Attribute("number"));
     }
     // add ports
     for(auto [num, ports] : portNums) {
@@ -89,17 +87,11 @@ VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme, in
     {
         std::vector<std::vector<int>> paths;
         int number = std::stoi(vl->Attribute("number"));
-        // DEBUG
-        if(number % 50 != 0) {
-            continue;
-        }
-        // /DEBUG
         int bag = std::stoi(vl->Attribute("bag"));
         int smin = sminDefault; // default
         int smax = std::stoi(vl->Attribute("lmax"));
         auto jitStr = vl->Attribute("jitStart"); // in us
-//        double jit0 = jitStr ? (std::stof(jitStr) / 1e3) : jitStartDefault; // in ms
-        double jit0 = 0.0; // DEBUG
+        double jit0 = jitStr ? (std::stof(jitStr) / 1e3) : jitStartDefault; // in ms
         for(auto pathEl = vl->FirstChildElement("path");
             pathEl != nullptr;
             pathEl = pathEl->NextSiblingElement("path"))
@@ -107,13 +99,10 @@ VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme, in
             std::vector<int> path = TokenizeCsv(pathEl->Attribute("path"));
             assert(!path.empty() && path[path.size()-1] == std::stoi(pathEl->Attribute("dest")));
             paths.push_back(path);
-//            printf("VL %s path to %s\n", vl->Attribute("number"), pathEl->Attribute("dest")); // DEBUG
         }
         config->vlinks[number] = std::make_unique<Vlink>(config.get(), number, paths, bag, smax, smin, jit0);
     }
-    config->calcChainMaxSize();
     printf("%ld vlinks\n", config->vlinks.size()); // DEBUG
-    printf("chainMaxSize = %ld\n", config->chainMaxSize); // DEBUG
     return config;
 }
 
@@ -140,7 +129,6 @@ bool toXml(VlinkConfig* config, tinyxml2::XMLDocument& doc) {
         vlEl = vlEl->NextSiblingElement("virtualLink"))
     {
         int number = std::stoi(vlEl->Attribute("number"));
-        printf("getting vl that may be absent\n"); // DEBUG
         Vlink* vl = config->getVlink(number);
         for(auto path = vlEl->FirstChildElement("path");
             path != nullptr;
@@ -157,6 +145,7 @@ bool toXml(VlinkConfig* config, tinyxml2::XMLDocument& doc) {
     return true;
 }
 
+// not used
 void VlinkSubTreeDebugInfo(const Vnode* vnode) {
     printf("vnode %d, input port %d, after %d\n",
            vnode->device->id,
@@ -179,11 +168,6 @@ void VlinkPathDebugInfo(const Vnode* dest, const std::string& prefix) {
 }
 
 void DebugInfo(const VlinkConfig* config) {
-//    for(auto vl: config->getAllVlinks()) {
-//        printf("vl %d:\n", vl->id);
-//        VlinkSubTreeDebugInfo(vl->src.get());
-//        printf("\n");
-//    }
     for(auto vl: config->getAllVlinks()) {
         printf("vl %d:\n", vl->id);
         for(const auto [_, dst]: vl->dst) {

@@ -8,6 +8,7 @@
 #include <vector>
 #include <map>
 #include <cassert>
+#include <set>
 #include "algo.h"
 
 class Vlink;
@@ -26,12 +27,17 @@ using PortOwn = std::unique_ptr<Port>;
 using VlinkConfigOwn = std::unique_ptr<VlinkConfig>;
 using PortDelaysFactoryOwn = std::unique_ptr<PortDelaysFactory>;
 
+// returns shuffled {0, ..., size - 1} vector if shuffle=true, not shuffled otherwise
+// uses C random tools
+// shuffle used only for DeletePaths tool, not for delay calculation
+std::vector<int> idxRange(int size, bool shuffle);
+
 class Error {
 public:
     enum ErrorType {Success, Cycle, BadForVoq, BpDiverge};
 
-    Error(ErrorType type = Success, const std::string& verbose = "")
-        : type(type), verbose(verbose) {}
+    Error(ErrorType type = Success, const std::string& verbose = "", const std::string& verboseRaw = "")
+        : type(type), verbose(verbose), verboseRaw(verboseRaw) {}
 
     Error(Error& other) = default;
 
@@ -41,9 +47,12 @@ public:
 
     Error& operator=(Error&& other) = default;
 
-
-    std::string Verbose() const {
+    const std::string& Verbose() const {
         return verbose;
+    }
+
+    const std::string& VerboseRaw() const {
+        return verboseRaw;
     }
 
     std::string TypeString() const {
@@ -86,6 +95,7 @@ public:
 private:
     ErrorType type;
     std::string verbose;
+    std::string verboseRaw;
 };
 
 bool operator==(Error::ErrorType lhs, const Error& rhs);
@@ -97,7 +107,6 @@ class VlinkConfig
 public:
     VlinkConfig(): factory(std::make_unique<PortDelaysFactory>()) {}
 
-    int chainMaxSize;
     int64_t linkRate; // in byte/ms
     std::string scheme;
     int cellSize; // sigma, bytes
@@ -150,9 +159,11 @@ public:
         return res;
     }
 
-    void calcChainMaxSize();
+    // random order of vlinks and destinations processing if shuffle=true
+    // prints delays if print=true
+    Error calcE2e(bool print = false);
 
-    Error calcE2e();
+    Error detectCycles(bool shuffle = false);
 
     double linkByte2ms(int64_t linkByte) {
         return static_cast<double>(linkByte) / linkRate;
@@ -295,7 +306,6 @@ public:
         if(delays[vl].ready()) {
             return Error::Success;
         }
-//        printf("---- calculating for vl %d device %d input port %d\n", vl, port->device->id, port->id); // DEBUG
         if(!first) {
             return calcCommon(vl);
         } else {
@@ -321,12 +331,8 @@ protected:
 
     static DelayData getFromMap(int vl, const std::map<int, DelayData>& delaysMap) {
         auto found = delaysMap.find(vl);
-        if(found != delaysMap.end()) {
-            return found->second;
-        } else {
-            std::cout << "no such vl in this port\n"; // DEBUG
-            return DelayData();
-        }
+        assert(found != delaysMap.end());
+        return found->second;
     }
 };
 
@@ -341,22 +347,26 @@ public:
     std::vector<VnodeOwn> next;
     Vnode* const prev; // (also == vnode of same Vlink from prev device's ports, which is unambiguous)
     Device* const device; // == in->device
-
     int outPrev; // == in->outPrev - id of out port of prev device
+    enum {NotVisited, VisitedNotPrepared, Prepared} cycleState; // for cycle detecting
+    bool calcPrepared;
 
     // e2e-delay, used only if this->device->type == Device::Dst
     DelayData e2e;
 
+    // random order of data dependency graph traversal if shuffle=true
     Error calcE2e() {
-        Error err = prepareCalc(1);
+        Error err = prepareCalc();
         if(!err) {
             e2e = in->delays->e2e(vl->id);
         }
         return err;
     }
 
+    Error prepareTest(bool shuffle = false);
+
     Vnode* selectNext(int deviceId) const {
-        for(auto &own: next) {
+        for(const auto &own: next) {
             if(own->device->id == deviceId) {
                 return own.get();
             }
@@ -364,9 +374,28 @@ public:
         return nullptr;
     }
 
+    // get ids of all devices which are leafs of this node's subtree
+    std::vector<const Vnode*> getAllDests() const {
+        std::vector<const Vnode*> vec;
+        _getAllDests(vec);
+        return vec;
+    }
+
 private:
     // prepare input delay data for calculation of delay of this vnode AND calculate this delay
-    Error prepareCalc(int chainSize, std::string debugPrefix = "") const; // DEBUG in signature
+    // random order of data dependency graph traversal if shuffle=true
+    Error prepareCalc(std::string debugPrefix = ""); // DEBUG in signature
+
+    void _getAllDests(std::vector<const Vnode*>& vec) const {
+        if(next.empty()) {
+            assert(device->type == Device::End);
+            vec.push_back(this);
+            return;
+        }
+        for(const auto& nxt: next) {
+            nxt->_getAllDests(vec);
+        }
+    }
 };
 
 class Mock : public PortDelays
