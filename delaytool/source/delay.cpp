@@ -2,20 +2,6 @@
 #include "algo.h"
 #include "delay.h"
 
-Error Mock::calcCommon(int vl) {
-    delays[vl] = DelayData(0, 0);
-    return Error::Success;
-}
-
-Error Mock::calcFirst(int vl) {
-    delays[vl] = DelayData(0, config->getVlink(vl)->jit0b);
-    return Error::Success;
-}
-
-DelayData Mock::e2e(int vl) const {
-    return getDelay(vl);
-}
-
 int64_t busyPeriod(const std::map<int, DelayData>& inDelays, VlinkConfig* config, bool byTick) {
     int it = 0;
     int64_t bp = 1;
@@ -69,7 +55,22 @@ DelayData e2eB(const PortDelays* scheme, int vlId) {
     return DelayData(dmin, dmax - dmin);
 }
 
-Error Voq::completeCheck(Device *sw) {
+
+Error Mock::calcCommon(int vl) {
+    delays[vl] = DelayData(0, 0);
+    return Error::Success;
+}
+
+Error Mock::calcFirst(int vl) {
+    delays[vl] = DelayData(0, config->getVlink(vl)->jit0b);
+    return Error::Success;
+}
+
+DelayData Mock::e2e(int vl) const {
+    return getDelay(vl);
+}
+
+Error completeCheckVoq(Device *sw) {
     // columns of Cij matrix are located at different PortDelays objects in next switches
     std::set<int> visited; // visited output ports
     defaultIntMap inPortLoad; // (sum of Cpq by q) by p in device->ports
@@ -382,6 +383,16 @@ DelayData OqA::completeDelay(DelayData delay, int vlId) const {
 }
 
 template<>
+Error OqA::calcFirst(int vlId) {
+    return calcFirstA(this, vlId);
+}
+
+template<>
+DelayData OqA::e2e(int vlId) const {
+    return e2eA(this, vlId);
+}
+
+template<>
 DelayData OqB::completeDelay(DelayData delay, int vlId) const {
     auto vl = config->getVlink(vlId);
     int64_t dmaxInc = config->cellSize * 2 - vl->smax;
@@ -391,22 +402,15 @@ DelayData OqB::completeDelay(DelayData delay, int vlId) const {
 }
 
 template<>
-Error OqA::calcFirst(int vlId) {
-    return calcFirstA(this, vlId);
-}
-
-template<>
 Error OqB::calcFirst(int vlId) {
     return calcFirstB(this, vlId);
-}
-
-template<>
-DelayData OqA::e2e(int vlId) const {
-    return e2eA(this, vlId);
 }
 
 template<>
 DelayData OqB::e2e(int vlId) const {
     return e2eB(this, vlId);
 }
+
+
+
 

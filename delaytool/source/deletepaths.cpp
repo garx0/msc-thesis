@@ -3,7 +3,6 @@
 #include "argparse/argparse.hpp"
 #include "configio.h"
 #include "algo.h"
-#include "delay.h"
 
 void deletePaths(tinyxml2::XMLDocument& doc, int vlId, std::set<int> dests) {
     auto afdxxml = doc.FirstChildElement("afdxxml");

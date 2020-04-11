@@ -3,7 +3,7 @@
 #include <vector>
 #include <cmath>
 #include <random>
-#include <chrono>
+//#include <chrono>
 #include "algo.h"
 #include "delay.h"
 
@@ -287,7 +287,7 @@ Error VlinkConfig::calcE2e(bool print) {
             if(device->type != Device::Switch) {
                 continue;
             }
-            Error err = Voq::completeCheck(device);
+            Error err = completeCheckVoq(device);
             if(err) {
                 return err;
             }
@@ -357,6 +357,8 @@ std::vector<Device*> VlinkConfig::getAllDevices() const {
     return res;
 }
 
+VlinkConfig::VlinkConfig(): factory(std::make_unique<PortDelaysFactory>()) {}
+
 void PortDelays::setInDelays(const std::map<int, DelayData> &values) {
     inDelays = values;
     _ready = true;
@@ -367,10 +369,12 @@ Error PortDelays::calc(int vl, bool first) {
         return Error::Success;
     }
     if(!first) {
-//            auto start = std::chrono::high_resolution_clock::now(); // DEBUG
+//        auto start = std::chrono::high_resolution_clock::now(); // DEBUG
         auto err = calcCommon(vl);
-//            printf("[port %d %*s] (vl %d calcCommon) %lu indelays, %lu delays : %ld us\n", port->id, 40, type.c_str(), vl, inDelays.size(), delays.size(),
-//                   std::chrono::duration_cast<std::chrono::microseconds>((std::chrono::high_resolution_clock::now() - start)).count()); // DEBUG
+//        printf("[port %d %*s] (vl %d calcCommon) %lu indelays, %lu delays : %ld us\n",
+//                port->id, 40, type.c_str(), vl, inDelays.size(), delays.size(),
+//                std::chrono::duration_cast<std::chrono::microseconds>(
+//                        (std::chrono::high_resolution_clock::now() - start)).count()); // DEBUG
         return err;
     } else {
         return calcFirst(vl);
