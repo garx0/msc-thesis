@@ -179,9 +179,8 @@ public:
 
     std::vector<Port*> getAllPorts() const;
 
-    // get vnodes coming from output port by port id
-    // i.e. vnodes in which prev->device == this and in->outPrev == portId
-    std::vector<Vnode*> fromOutPort(int portId) const;
+    // get input port connected with output port portId
+    Port* fromOutPort(int portId) const;
 };
 
 // INPUT PORT
@@ -207,10 +206,12 @@ public:
 class DelayData
 {
 public:
-    DelayData(): _dmin(-2), _jit(-1), _dmax(-1), _ready(false) {}
-    DelayData(int64_t dmin, int64_t jit): _dmin(dmin), _jit(jit), _dmax(dmin + jit), _ready(true) {}
+    DelayData(): _vl(nullptr), _dmin(-2), _jit(-1), _dmax(-1), _ready(false) {}
+    DelayData(Vlink* vl, int64_t dmin, int64_t jit): _vl(vl), _dmin(dmin), _jit(jit), _dmax(dmin + jit), _ready(true) {}
 
     bool ready() const { return _ready; }
+
+    Vlink* vl() const { return _vl; }
 
     int64_t dmin() const { return _ready ? _dmin : -1; }
 
@@ -219,6 +220,7 @@ public:
     int64_t dmax() const { return _ready ? _dmax : -1; }
 
 private:
+    Vlink* _vl;
     int64_t _dmin;
     int64_t _jit;
     int64_t _dmax;
@@ -229,41 +231,47 @@ class PortDelays
 {
 public:
     explicit PortDelays(Port* port, const std::string& type)
-    : config(port->device->config), port(port), type(type), _ready(false) {}
+    : config(port->device->config), port(port), type(type), _inputReady(false) {}
 
     VlinkConfig* const config;
     Port* const port;
     std::string type;
 
-    void setInDelays(const std::map<int, DelayData>& values);
+    void setInputReady() { _inputReady = true; }
 
-    bool ready() { return _ready; }
+    bool readyIn() { return _inputReady; }
 
     DelayData getDelay(int vl) const { return getFromMap(vl, delays); }
 
+    void setDelay(DelayData delay);
+
     DelayData getInDelay(int vl) const { return getFromMap(vl, inDelays); }
+
+    void setInDelay(DelayData delay);
 
     const std::map<int, DelayData>& getDelays() const { return delays; }
 
     const std::map<int, DelayData>& getInDelays() const { return inDelays; }
 
-    Error calc(int vl, bool first = false);
+    void setInDelays(const std::map<int, DelayData>& values);
+
+    Error calc(Vlink* vl, bool first = false);
 
     // outDelay[vl] must have been calculated prior to call of this method
     virtual DelayData e2e(int vl) const = 0;
 
-    friend Error calcFirstA(PortDelays* scheme, int vlId);
-    friend Error calcFirstB(PortDelays* scheme, int vlId);
-    friend DelayData e2eA(PortDelays* scheme, int vlId);
-    friend DelayData e2eB(PortDelays* scheme, int vlId);
+//    friend Error calcFirstA(PortDelays* scheme, Vlink* vl);
+//    friend Error calcFirstB(PortDelays* scheme, Vlink* vl);
+//    friend DelayData e2eA(PortDelays* scheme, int vlId);
+//    friend DelayData e2eB(PortDelays* scheme, int vlId);
 
-    virtual Error calcCommon(int vl) = 0;
-    virtual Error calcFirst(int vl) = 0;
+    virtual Error calcCommon(Vlink* vl) = 0;
+    virtual Error calcFirst(Vlink* vl) = 0;
 
 protected:
     std::map<int, DelayData> delays;
     std::map<int, DelayData> inDelays;
-    bool _ready;
+    bool _inputReady;
 
     static DelayData getFromMap(int vl, const std::map<int, DelayData>& delaysMap);
 };

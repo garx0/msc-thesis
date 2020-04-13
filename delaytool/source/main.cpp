@@ -64,6 +64,16 @@ int main(int argc, char* argv[]) {
             .default_value(false)
             .help("print calculated E2E delays");
 
+    program.add_argument("-j", "--jitdef")
+            .action([](const std::string& value) { return std::stof(value); })
+            .default_value(500.f)
+            .help("default start jitter in microseconds if not specified in input data (default: 500)");
+
+    program.add_argument("-r", "--rate")
+            .action([](const std::string& value) { return std::stoi(value); })
+            .default_value(0)
+            .help("change (force) link rate to specified value, in byte/ms");
+
     try {
         program.parse_args(argc, argv);
     } catch (const std::runtime_error& err) {
@@ -76,6 +86,8 @@ int main(int argc, char* argv[]) {
     std::string scheme = program.get<std::string>("--scheme");
     int cellSize = program.get<int>("--cellsize");
     int voqPeriod = program.get<int>("--periodvoq");
+    float startJitDefault = program.get<float>("--jitdef");
+    int forceLinkRate = program.get<int>("--rate");
     bool printConfig = program.get<bool>("--printconfig");
     bool printDelays = program.get<bool>("--printdelays");
 
@@ -90,7 +102,7 @@ int main(int argc, char* argv[]) {
         fprintf(stderr, "error: can't open output file: %s\n", fileOut.c_str());
         return 0;
     }
-    VlinkConfigOwn config = fromXml(doc, scheme, cellSize, voqPeriod);
+    VlinkConfigOwn config = fromXml(doc, scheme, cellSize, voqPeriod, startJitDefault, forceLinkRate);
     if(config == nullptr) {
         fprintf(stderr, "error reading from xml\n");
         fclose(fpOut);

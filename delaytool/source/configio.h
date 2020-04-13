@@ -7,13 +7,14 @@
 
 constexpr int cellSizeDefault = 10; // bytes
 constexpr int voqPeriodDefault = 100; // cells
-constexpr double jitStartDefault = 0.5; // ms
+constexpr double jitStartDefault = 500; // us
 constexpr int sminDefault = 64; // bytes
 
 std::vector<int> TokenizeCsv(const std::string& str);
 
 VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme,
-        int cellSize = cellSizeDefault, int voqPeriod = voqPeriodDefault);
+        int cellSize = cellSizeDefault, int voqPeriod = voqPeriodDefault,
+        double jitDefaultValue = jitStartDefault, int forceLinkRate = 0);
 
 // doc must already contain the resources and VL configuration
 // (e.g. doc used for building config)

@@ -36,24 +36,32 @@ void Device::AddPorts(const std::vector<int>& portIds) {
     }
 }
 
-std::vector<Vnode*> Device::fromOutPort(int portId) const {
-    std::vector<Vnode*> ans;
-    for(auto port: getAllPorts()) {
-        for(auto vnode: port->getAllVnodes()) {
-            for(const auto &next: vnode->next) {
-                if(next->outPrev == portId) {
-                    ans.push_back(next.get());
-                    break;
-                }
-            }
-        }
-    }
-    for(auto vl: sourceFor) {
-        assert(vl->src->next.size() == 1);
-        ans.push_back(vl->src->next[0].get());
-    }
-    return ans;
+Port* Device::fromOutPort(int outPortId) const {
+    auto inPortId = config->connectedPort(outPortId);
+    auto deviceId = config->portDevice(inPortId);
+    auto device = config->getDevice(deviceId);
+    return device->getPort(inPortId);
 }
+
+
+//std::vector<Vnode*> Device::fromOutPort(int portId) const {
+//    std::vector<Vnode*> ans;
+//    for(auto port: getAllPorts()) {
+//        for(auto vnode: port->getAllVnodes()) {
+//            for(const auto &next: vnode->next) {
+//                if(next->outPrev == portId) {
+//                    ans.push_back(next.get());
+//                    break;
+//                }
+//            }
+//        }
+//    }
+//    for(auto vl: sourceFor) {
+//        assert(vl->src->next.size() == 1);
+//        ans.push_back(vl->src->next[0].get());
+//    }
+//    return ans;
+//}
 
 Port* Device::getPort(int portId) const {
     auto found = ports.find(portId);
@@ -171,10 +179,11 @@ Error Vnode::prepareTest(bool shuffle) {
     }
     assert(prev != nullptr);
     if(prev->prev != nullptr) {
-        auto fromOutPort = prev->device->fromOutPort(outPrev);
-        auto order = idxRange(fromOutPort.size(), shuffle);
+        Port* fromOutPort = prev->device->fromOutPort(outPrev);
+        auto vnodeNextList = fromOutPort->getAllVnodes();
+        auto order = idxRange(vnodeNextList.size(), shuffle);
         for(auto idx: order) {
-            auto curVnode = fromOutPort[idx]->prev;
+            auto curVnode = vnodeNextList[idx]->prev;
             if(curVnode->cycleState != Prepared) {
                 Error err = curVnode->prepareTest(shuffle);
                 if(err) {
@@ -192,11 +201,12 @@ Error Vnode::prepareTest(bool shuffle) {
 Error Vnode::prepareCalc(std::string debugPrefix) { // DEBUG in signature
     assert(prev != nullptr);
     if(prev->prev == nullptr) {
-        in->delays->calc(vl->id, true);
+        in->delays->calc(vl, true);
     } else {
         Error err;
         std::map<int, DelayData> requiredDelays;
-        for(auto vnodeNext: prev->device->fromOutPort(outPrev)) {
+        Port* fromOutPort = prev->device->fromOutPort(outPrev);
+        for(auto vnodeNext: fromOutPort->getAllVnodes()) {
             auto curVnode = vnodeNext->prev;
             if(!curVnode->calcPrepared) {
                 err = curVnode->prepareCalc(debugPrefix+"  ");
@@ -211,10 +221,10 @@ Error Vnode::prepareCalc(std::string debugPrefix) { // DEBUG in signature
             int vlId = curVnode->vl->id;
             auto delay = curVnode->in->delays->getDelay(vlId);
             assert(delay.ready());
-            requiredDelays[vlId] = delay;
+            in->delays->setInDelay(delay);
         }
-        in->delays->setInDelays(requiredDelays);
-        err = in->delays->calc(vl->id);
+        in->delays->setInputReady();
+        err = in->delays->calc(vl);
         if(err) {
             return err;
         }
@@ -274,7 +284,7 @@ Error VlinkConfig::calcE2e(bool print) {
             }
             if(print) {
                 DelayData e2e = vnode->e2e;
-                printf("VL %d to %d: maxDelay = %li lB (%.1f us), jit = %li lB (%.1f us)\n",
+                printf("VL %d to %d: maxDelay = %li lB (%.0f us), jit = %li lB (%.0f us)\n",
                        vnode->vl->id, vnode->device->id,
                        e2e.dmax(), linkByte2ms(e2e.dmax()) * 1e3,
                        e2e.jit(), linkByte2ms(e2e.jit()) * 1e3);
@@ -361,11 +371,19 @@ VlinkConfig::VlinkConfig(): factory(std::make_unique<PortDelaysFactory>()) {}
 
 void PortDelays::setInDelays(const std::map<int, DelayData> &values) {
     inDelays = values;
-    _ready = true;
+    _inputReady = true;
 }
 
-Error PortDelays::calc(int vl, bool first) {
-    if(delays[vl].ready()) {
+void PortDelays::setInDelay(DelayData delay) {
+    inDelays[delay.vl()->id] = delay;
+}
+
+void PortDelays::setDelay(DelayData delay) {
+    delays[delay.vl()->id] = delay;
+}
+
+Error PortDelays::calc(Vlink* vl, bool first) {
+    if(delays[vl->id].ready()) {
         return Error::Success;
     }
     if(!first) {

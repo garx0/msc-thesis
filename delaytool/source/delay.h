@@ -12,9 +12,9 @@ public:
 
     DelayData e2e(int vl) const override;
 
-    Error calcCommon(int vl) override;
+    Error calcCommon(Vlink* vl) override;
 
-    Error calcFirst(int vl) override;
+    Error calcFirst(Vlink* vl) override;
 };
 
 class defaultIntMap : public std::map<int, int> {
@@ -58,9 +58,9 @@ public:
 
     void calcVlinkLoad() override;
 
-    Error calcCommon(int vl) override;
+    Error calcCommon(Vlink* vl) override;
 
-    Error calcFirst(int vl) override;
+    Error calcFirst(Vlink* vl) override;
 };
 
 class VoqB : public Voq
@@ -72,9 +72,9 @@ public:
 
     void calcVlinkLoad() override;
 
-    Error calcCommon(int vl) override;
+    Error calcCommon(Vlink* vl) override;
 
-    Error calcFirst(int vl) override;
+    Error calcFirst(Vlink* vl) override;
 };
 
 // if cells = true, skmax is rounded up to whole number of cells
@@ -88,15 +88,15 @@ public:
 
     DelayData e2e(int vl) const override;
 
-    // == Rk,j(t) - Jk, k == curVlId
-    int64_t delayFunc(int64_t t, int curVlId) const;
+    // == Rk,j(t) - Jk, k == vl->id
+    int64_t delayFunc(int64_t t, Vlink* vl) const;
 
-    // == Rk,j(q)* - Jk, k == curVlId
-    int64_t delayFuncRem(int q, int curVlId);
+    // == Rk,j(q)* - Jk, k == vl->id
+    int64_t delayFuncRem(int q, Vlink* vl);
 
-    Error calcCommon(int vl) override;
+    Error calcCommon(Vlink* vl) override;
 
-    Error calcFirst(int vl) override;
+    Error calcFirst(Vlink* vl) override;
 
 private:
     int64_t bp;
@@ -113,15 +113,15 @@ public:
 
     DelayData e2e(int vl) const override;
 
-    // == Rk,j(t) - Jk, k == curVlId
-    int64_t delayFunc(int64_t t, int curVlId) const;
+    // == Rk,j(t) - Jk, k == vl->id
+    int64_t delayFunc(int64_t t, Vlink* vl) const;
 
-    // == Rk,j(q)* - Jk, k == curVlId
-    int64_t delayFuncRem(int q, int curVlId);
+    // == Rk,j(q)* - Jk, k == vl->id
+    int64_t delayFuncRem(int q, Vlink* vl);
 
-    Error calcCommon(int vl) override;
+    Error calcCommon(Vlink* vl) override;
 
-    Error calcFirst(int vl) override;
+    Error calcFirst(Vlink* vl) override;
 
 private:
     int64_t bp;
@@ -143,12 +143,12 @@ public:
 
     DelayData e2e(int vl) const override;
 
-    Error calcCommon(int vl) override;
+    Error calcCommon(Vlink* vl) override;
 
-    Error calcFirst(int vl) override;
+    Error calcFirst(Vlink* vl) override;
 
     // make out delay from scheme2 out delay
-    DelayData completeDelay(DelayData delay, int vl) const;
+    DelayData completeDelay(DelayData delay) const;
 
 private:
     bool midDelaysReady;
@@ -234,9 +234,9 @@ inline std::string OqOverloadVerbose(Port* port) {
 
 int64_t busyPeriod(const std::map<int, DelayData>& inDelays, VlinkConfig* config, bool byTick = false);
 
-Error calcFirstA(PortDelays* scheme, int vlId);
+Error calcFirstA(PortDelays* scheme, Vlink* vl);
 
-Error calcFirstB(PortDelays* scheme, int vlId);
+Error calcFirstB(PortDelays* scheme, Vlink* vl);
 
 DelayData e2eA(const PortDelays* scheme, int vlId);
 
@@ -244,28 +244,27 @@ DelayData e2eB(const PortDelays* scheme, int vlId);
 
 // == Rk,j(t) - Jk, k == curVlId
 template<bool cells>
-int64_t OqPacket<cells>::delayFunc(int64_t t, int curVlId) const {
+int64_t OqPacket<cells>::delayFunc(int64_t t, Vlink* curVl) const {
     int64_t res = -t;
     for(auto [vlId, delay]: inDelays) {
-        auto vl = config->getVlink(vlId);
-        res += numPacketsUp(t, vl->bagB, (vlId != curVlId) * delay.jit()) * vl->smax;
+        auto vl = delay.vl();
+        res += numPacketsUp(t, vl->bagB, (vlId != curVl->id) * delay.jit()) * vl->smax;
     }
     return res;
 }
 
 // == Rk,j(q)* - Jk, k == curVlId
 template<bool cells>
-int64_t OqPacket<cells>::delayFuncRem(int q, int curVlId) {
+int64_t OqPacket<cells>::delayFuncRem(int q, Vlink* curVl) {
     if(delayFuncRemConstPart == std::numeric_limits<int64_t>::min()) {
         // delayFuncRemConstPart wasn't calculated
         delayFuncRemConstPart = -bp;
         for(auto [vlId, delay]: inDelays) {
-            auto vl = config->getVlink(vlId);
+            auto vl = delay.vl();
             delayFuncRemConstPart += numPacketsUp(bp - vl->smax, vl->bagB, delay.jit()) * vl->smax;
         }
     }
-    auto curVl = config->getVlink(curVlId);
-    int64_t curJit = getInDelay(curVlId).jit();
+    int64_t curJit = getInDelay(curVl->id).jit();
     return delayFuncRemConstPart
            + (q + 1 - numPacketsUp(bp - curVl->smax, curVl->bagB, curJit)) * curVl->smax
            + ramp(curJit - ramp(curVl->smax + (q - 1) * curVl->bagB - bp))
@@ -273,7 +272,7 @@ int64_t OqPacket<cells>::delayFuncRem(int q, int curVlId) {
 }
 
 template<bool cells>
-Error OqPacket<cells>::calcCommon(int curVlId) {
+Error OqPacket<cells>::calcCommon(Vlink* curVl) {
     if(bp < 0) {
         bp = busyPeriod(inDelays, config, cells);
         if(bp < 0) {
@@ -288,13 +287,12 @@ Error OqPacket<cells>::calcCommon(int curVlId) {
             return Error(Error::BpDiverge, OqOverloadVerbose(port));
         }
     }
-    auto curVl = config->getVlink(curVlId);
     int64_t delayFuncMax = -1;
     int64_t delayFuncValue;
 
     // calc delayFunc in chosen points, part 1
     for(int64_t t = 0; t <= bp - curVl->smax; t += curVl->bagB) {
-        delayFuncValue = delayFunc(t, curVlId);
+        delayFuncValue = delayFunc(t, curVl);
         if(delayFuncValue > delayFuncMax) {
             delayFuncMax = delayFuncValue;
         }
@@ -303,16 +301,16 @@ Error OqPacket<cells>::calcCommon(int curVlId) {
     // calc delayFunc in chosen points, part 2
     DelayData curDelay;
     for(auto [vlId, delay]: inDelays) {
-        if(vlId == curVlId) {
+        if(vlId == curVl->id) {
             curDelay = delay;
             continue;
         }
-        auto vl = config->getVlink(vlId);
+        auto vl = delay.vl();
         for(int64_t t = sizeRound(delay.jit(), vl->bagB) - delay.jit();
             t <= bp - curVl->smax;
             t += vl->bagB)
         {
-            delayFuncValue = delayFunc(t, curVlId);
+            delayFuncValue = delayFunc(t, curVl);
             if(delayFuncValue > delayFuncMax) {
                 delayFuncMax = delayFuncValue;
             }
@@ -337,7 +335,7 @@ Error OqPacket<cells>::calcCommon(int curVlId) {
     int qMax = numPackets(bp, curVl->bagB, curDelay.jit());
 //    printf("qmin=%d, qmax=%d\n", qMin, qMax); // DEBUG
     for(int q = qMin; q <= qMax; q++) {
-        delayFuncValue = delayFuncRem(q, curVlId);
+        delayFuncValue = delayFuncRem(q, curVl);
 //        printf("delayFuncRem(%d) = %ld\n", q, delayFuncValue); // DEBUG
         if(delayFuncValue > delayFuncMax) {
             delayFuncMax = delayFuncValue;
@@ -347,16 +345,15 @@ Error OqPacket<cells>::calcCommon(int curVlId) {
     int64_t dmax = delayFuncMax + curDelay.dmax();
     int64_t dmin = curDelay.dmin() + curVl->smin;
     assert(dmax >= dmin);
-    delays[curVlId] = DelayData(dmin, dmax-dmin);
+    setDelay(DelayData(curVl, dmin, dmax-dmin));
     return Error::Success;
 }
 
 template<bool cells>
-Error OqPacket<cells>::calcFirst(int vlId) {
-    auto vl = config->getVlink(vlId);
+Error OqPacket<cells>::calcFirst(Vlink* vl) {
     int64_t dmin = vl->smin;
     int64_t jit = vl->jit0b + vl->smax - vl->smin;
-    delays[vlId] = DelayData(dmin, jit);
+    setDelay(DelayData(vl, dmin, jit));
     return Error::Success;
 }
 
@@ -366,11 +363,11 @@ DelayData OqPacket<cells>::e2e(int vlId) const {
 }
 
 template<class Scheme1, class Scheme2>
-Error TwoSchemes<Scheme1, Scheme2>::calcCommon(int curVlId) {
+Error TwoSchemes<Scheme1, Scheme2>::calcCommon(Vlink* curVl) {
     if(!midDelaysReady) {
         scheme1.setInDelays(inDelays);
-        for(auto [vlId, _]: inDelays) {
-            Error err = scheme1.calc(vlId);
+        for(auto [vlId, delay]: inDelays) {
+            Error err = scheme1.calc(delay.vl());
             if(err) {
                 return err;
             }
@@ -379,11 +376,11 @@ Error TwoSchemes<Scheme1, Scheme2>::calcCommon(int curVlId) {
 //        printf("counted middelays\n");
         midDelaysReady = true;
     }
-    Error err = scheme2.calc(curVlId);
+    Error err = scheme2.calc(curVl);
     if(err) {
         return err;
     }
-    delays[curVlId] = completeDelay(scheme2.getDelay(curVlId), curVlId);
+    setDelay(completeDelay(scheme2.getDelay(curVl->id)));
     return Error::Success;
 }
 

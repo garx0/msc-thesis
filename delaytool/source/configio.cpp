@@ -21,12 +21,14 @@ std::vector<int> TokenizeCsv(const std::string& str) {
     return res;
 }
 
-VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme, int cellSize, int voqPeriod) {
+VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme,
+        int cellSize, int voqPeriod, double jitDefaultValue, int forceLinkRate) {
     VlinkConfigOwn config = std::make_unique<VlinkConfig>();
     auto afdxxml = doc.FirstChildElement("afdxxml");
     auto resources = afdxxml->FirstChildElement("resources");
-    double cap = std::stof(resources->FirstChildElement("link")->Attribute("capacity"));
-    config->linkRate = cap;
+    config->linkRate = forceLinkRate == 0
+            ? std::stof(resources->FirstChildElement("link")->Attribute("capacity"))
+            : forceLinkRate;
     config->cellSize = cellSize;
     config->voqL = voqPeriod;
     config->scheme = scheme;
@@ -35,8 +37,7 @@ VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme, in
         res != nullptr;
         res = res->NextSiblingElement("link"))
     {
-        double curCap = std::stof(res->Attribute("capacity"));
-        if(curCap != cap) {
+        if(forceLinkRate == 0 && std::stof(res->Attribute("capacity")) != config->linkRate) {
             std::cerr << "error: bad input resources - all links must have the same capacity" << std::endl;
             return nullptr;
         }
@@ -91,8 +92,7 @@ VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme, in
         int smin = sminDefault; // default
         int smax = std::stoi(vl->Attribute("lmax"));
         auto jitStr = vl->Attribute("jitStart"); // in us
-        double jit0 = jitStr ? (std::stof(jitStr) / 1e3) : jitStartDefault; // in ms
-//        double jit0 = 0.0;
+        double jit0 = (jitStr ? std::stof(jitStr) : jitDefaultValue) / 1e3; // in ms
         for(auto pathEl = vl->FirstChildElement("path");
             pathEl != nullptr;
             pathEl = pathEl->NextSiblingElement("path"))
@@ -192,7 +192,7 @@ void DebugInfo(const VlinkConfig* config) {
             }
             printf("\n");
             printf("\toutput port %d:", port->id);
-            auto outVnodes = device->fromOutPort(port->id);
+            auto outVnodes = device->fromOutPort(port->id)->getAllVnodes();
             if(!outVnodes.empty()) {
                 printf(" vl");
                 for(auto vnode: outVnodes) {
