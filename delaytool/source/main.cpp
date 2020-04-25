@@ -24,7 +24,7 @@ int main(int argc, char* argv[]) {
             .help("output xml file with delays of all VLs to all their destinations");
 
     program.add_argument("-s", "--scheme")
-            .help("scheme type: voqa|voqb|oqp|oqa|oqb (default: oqp)")
+            .help("scheme schemeName: voqa|voqb|oqp|oqa|oqb (default: oqp). oqp ~ OQ; oqa, oqb ~ CIOQ")
             .default_value(std::string("OqPacket"))
             .action([](const std::string& value) {
                 static const std::map<std::string, std::string> mapping = {

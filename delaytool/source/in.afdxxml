@@ -30,14 +30,14 @@
 		<link capacity="100000" from="9" fromType="0" to="10" toType="0"/>
 	</resources>
 	<virtualLinks>
-		<virtualLink bag="128" dest="7" id="Designed for Data Flow 1" lmax="64" number="1" responseTime="1" source="6">
+		<virtualLink bag="128" dest="7" id="Designed for Data Flow 1" lmax="64" number="1" jitStart="200" responseTime="1" source="6">
 			<path dest="7" path="6,7" source="6"/>
 		</virtualLink>
-		<virtualLink bag="64" dest="2,3" id="Designed for Data Flow 2" lmax="67" number="2" responseTime="43" source="5">
+		<virtualLink bag="64" dest="2,3" id="Designed for Data Flow 2" lmax="67" number="2" jitStart="100" responseTime="43" source="5">
 			<path dest="2" path="5,8,9,2" source="5"/>
 			<path dest="3" path="5,8,4,3" source="5"/>
 		</virtualLink>
-		<virtualLink bag="1" dest="3" id="Designed for Data Flow 3" lmax="64" number="3" responseTime="43" source="2">
+		<virtualLink bag="1" dest="3" id="Designed for Data Flow 3" lmax="64" number="3" jitStart="0" responseTime="43" source="2">
 			<path dest="3" path="2,9,4,3" source="2"/>
 		</virtualLink>
 	</virtualLinks>

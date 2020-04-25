@@ -230,12 +230,16 @@ private:
 class PortDelays
 {
 public:
-    explicit PortDelays(Port* port, const std::string& type)
-    : config(port->device->config), port(port), type(type), _inputReady(false) {}
+    enum celltype_t {P, A, B};
+
+    explicit PortDelays(Port* port, const std::string& schemeName, celltype_t cellType)
+    : config(port->device->config), port(port), schemeName(schemeName),
+      cellType(cellType), _inputReady(false) {}
 
     VlinkConfig* const config;
     Port* const port;
-    std::string type;
+    std::string schemeName;
+    celltype_t const cellType;
 
     void setInputReady() { _inputReady = true; }
 
@@ -255,18 +259,22 @@ public:
 
     void setInDelays(const std::map<int, DelayData>& values);
 
+    // max time from start of transfer into link
+    // to start of entering into queue of next switch
+    int64_t trMax(Vlink* vl) const;
+
+    // min time from start of transfer into link
+    // to start of entering into queue of next switch
+    int64_t trMin(Vlink* vl) const;
+
+    // first == true if prev device is switch
     Error calc(Vlink* vl, bool first = false);
 
     // outDelay[vl] must have been calculated prior to call of this method
-    virtual DelayData e2e(int vl) const = 0;
+    DelayData e2e(int vl) const;
 
-//    friend Error calcFirstA(PortDelays* scheme, Vlink* vl);
-//    friend Error calcFirstB(PortDelays* scheme, Vlink* vl);
-//    friend DelayData e2eA(PortDelays* scheme, int vlId);
-//    friend DelayData e2eB(PortDelays* scheme, int vlId);
-
+    // is called in calc if prev device is switch
     virtual Error calcCommon(Vlink* vl) = 0;
-    virtual Error calcFirst(Vlink* vl) = 0;
 
 protected:
     std::map<int, DelayData> delays;
@@ -291,7 +299,7 @@ public:
     enum {NotVisited, VisitedNotPrepared, Prepared} cycleState; // for cycle detecting
     bool calcPrepared;
 
-    // e2e-delay, used only if this->device->type == Device::Dst
+    // e2e-delay, used only if this->device->schemeName == Device::Dst
     DelayData e2e;
 
     // random order of data dependency graph traversal if shuffle=true
@@ -324,7 +332,7 @@ public:
     void RegisterAll();
 
     // interface for TCreator
-    // is to unite TCreator objects creating different PortDelays under one type
+    // is to unite TCreator objects creating different PortDelays under one schemeName
     class ICreator {
     public:
         ICreator() = default;

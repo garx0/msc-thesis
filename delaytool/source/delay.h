@@ -5,160 +5,6 @@
 
 constexpr int64_t maxBpIter = 10000;
 
-class Mock : public PortDelays
-{
-public:
-    Mock(Port* port): PortDelays(port, "Mock") {}
-
-    DelayData e2e(int vl) const override;
-
-    Error calcCommon(Vlink* vl) override;
-
-    Error calcFirst(Vlink* vl) override;
-};
-
-class defaultIntMap : public std::map<int, int> {
-public:
-    defaultIntMap() = default;
-
-    int Get(int key);
-
-    void Inc(int key, int val);
-};
-
-// base class for VoqA and VoqB
-class Voq : public PortDelays
-{
-public:
-    Voq(Port* port, const std::string& type): PortDelays(port, type), outPrevLoadSum(0), loadReady(false) {}
-
-    // C_l values by l on prev switch
-    defaultIntMap vlinkLoad;
-
-    // C_pj values by p on prev switch, where j ~ this->port->outPrev
-    defaultIntMap outPrevLoad;
-
-    // sum of outPrevLoad values
-    int outPrevLoadSum;
-
-    // is information about input load (outPrevLoad and its sum) ready
-    bool loadReady;
-
-    void calcOutPrevLoad();
-
-    virtual void calcVlinkLoad() = 0;
-};
-
-class VoqA : public Voq
-{
-public:
-    explicit VoqA(Port* port): Voq(port, "VoqA") {}
-
-    DelayData e2e(int vl) const override;
-
-    void calcVlinkLoad() override;
-
-    Error calcCommon(Vlink* vl) override;
-
-    Error calcFirst(Vlink* vl) override;
-};
-
-class VoqB : public Voq
-{
-public:
-    explicit VoqB(Port* port): Voq(port, "VoqB") { }
-
-    DelayData e2e(int vl) const override;
-
-    void calcVlinkLoad() override;
-
-    Error calcCommon(Vlink* vl) override;
-
-    Error calcFirst(Vlink* vl) override;
-};
-
-// if cells = true, skmax is rounded up to whole number of cells
-template<bool cells = false>
-class OqPacket : public PortDelays
-{
-public:
-    explicit OqPacket(Port* port)
-            : PortDelays(port, "OqPacket<" + std::to_string(cells) + ">"), bp(-1),
-              delayFuncRemConstPart(std::numeric_limits<int64_t>::min()) {}
-
-    DelayData e2e(int vl) const override;
-
-    // == Rk,j(t) - Jk, k == vl->id
-    int64_t delayFunc(int64_t t, Vlink* vl) const;
-
-    // == Rk,j(q)* - Jk, k == vl->id
-    int64_t delayFuncRem(int q, Vlink* vl);
-
-    Error calcCommon(Vlink* vl) override;
-
-    Error calcFirst(Vlink* vl) override;
-
-private:
-    int64_t bp;
-    int64_t delayFuncRemConstPart;
-};
-
-// OqB without packet FIFO
-class OqCellB : public PortDelays
-{
-public:
-    explicit OqCellB(Port* port)
-            : PortDelays(port, "OqCellB"), bp(-1),
-              delayFuncRemConstPart(std::numeric_limits<int64_t>::min()) {}
-
-    DelayData e2e(int vl) const override;
-
-    // == Rk,j(t) - Jk, k == vl->id
-    int64_t delayFunc(int64_t t, Vlink* vl) const;
-
-    // == Rk,j(q)* - Jk, k == vl->id
-    int64_t delayFuncRem(int q, Vlink* vl);
-
-    Error calcCommon(Vlink* vl) override;
-
-    Error calcFirst(Vlink* vl) override;
-
-private:
-    int64_t bp;
-    int64_t delayFuncRemConstPart;
-};
-
-// two different schemes stitched together
-template<class Scheme1, class Scheme2>
-class TwoSchemes : public PortDelays
-{
-    static_assert(std::is_base_of<PortDelays, Scheme1>::value && std::is_base_of<PortDelays, Scheme2>::value,
-                  "parameters of TwoSchemes must inherit from PortDelays");
-public:
-    explicit TwoSchemes(Port* port)
-            : PortDelays(port, "TwoSchemes"), midDelaysReady(false), scheme1(port), scheme2(port)
-    {
-        type += "<" + scheme1.type + ", " + scheme2.type + ">";
-    }
-
-    DelayData e2e(int vl) const override;
-
-    Error calcCommon(Vlink* vl) override;
-
-    Error calcFirst(Vlink* vl) override;
-
-    // make out delay from scheme2 out delay
-    DelayData completeDelay(DelayData delay) const;
-
-private:
-    bool midDelaysReady;
-    Scheme1 scheme1;
-    Scheme2 scheme2;
-};
-
-using OqA = TwoSchemes<OqPacket<true>, OqPacket<>>;
-using OqB = TwoSchemes<OqCellB, OqPacket<>>;
-
 // floor(x/y)
 inline int64_t floordiv(int64_t x, int64_t y) {
     return x / y;
@@ -172,11 +18,6 @@ inline int64_t ceildiv(int64_t x, int64_t y) {
 // = ceil(x/y + 0) = floor(x/y) + 1, x >= 0
 inline int64_t ceildiv_up(int64_t x, int64_t y) {
     return x / y + 1;
-}
-
-// = max(0, n)
-inline int64_t ramp(int64_t n) {
-    return n * (n >= 0);
 }
 
 // round size of packet to whole number of cells
@@ -206,7 +47,7 @@ inline int64_t numCells(int64_t intvl, int64_t bag, int64_t jit, int64_t nCells,
 }
 
 // = numCells(intvl+0, ...) (limit from above)
-// intvl >= 0
+// intvl >= 0 (interval)
 inline int64_t numCellsUp(int64_t intvl, int64_t bag, int64_t jit, int64_t nCells, int64_t cellSize) {
     return nCells * ((intvl + jit) / bag)
            + std::min(nCells,
@@ -234,13 +75,132 @@ inline std::string OqOverloadVerbose(Port* port) {
 
 int64_t busyPeriod(const std::map<int, DelayData>& inDelays, VlinkConfig* config, bool byTick = false);
 
-Error calcFirstA(PortDelays* scheme, Vlink* vl);
+class Mock : public PortDelays
+{
+public:
+    Mock(Port* port): PortDelays(port, "Mock", P) {}
 
-Error calcFirstB(PortDelays* scheme, Vlink* vl);
+    Error calcCommon(Vlink* vl) override;
+};
 
-DelayData e2eA(const PortDelays* scheme, int vlId);
+class defaultIntMap : public std::map<int, int> {
+public:
+    defaultIntMap() = default;
 
-DelayData e2eB(const PortDelays* scheme, int vlId);
+    int Get(int key);
+
+    void Inc(int key, int val);
+};
+
+// base class for VoqA and VoqB
+class Voq : public PortDelays
+{
+public:
+    Voq(Port* port, const std::string& schemeName, celltype_t cellType)
+        : PortDelays(port, schemeName, cellType), outPrevLoadSum(0), loadReady(false) {}
+
+    // C_l values by l on prev switch
+    defaultIntMap vlinkLoad;
+
+    // C_pj values by p on prev switch, where j ~ this->port->outPrev
+    defaultIntMap outPrevLoad;
+
+    // sum of outPrevLoad values
+    int outPrevLoadSum;
+
+    // is information about input load (outPrevLoad and its sum) ready
+    bool loadReady;
+
+    void calcOutPrevLoad();
+
+    virtual void calcVlinkLoad() = 0;
+};
+
+class VoqA : public Voq
+{
+public:
+    explicit VoqA(Port* port): Voq(port, "VoqA", A) {}
+
+    void calcVlinkLoad() override;
+
+    Error calcCommon(Vlink* vl) override;
+};
+
+class VoqB : public Voq
+{
+public:
+    explicit VoqB(Port* port): Voq(port, "VoqB", B) { }
+
+    void calcVlinkLoad() override;
+
+    Error calcCommon(Vlink* vl) override;
+};
+
+// if cells = true, skmax is rounded up to whole number of cells
+template<bool cells = false>
+class OqPacket : public PortDelays
+{
+public:
+    explicit OqPacket(Port* port)
+        : PortDelays(port, "OqPacket<" + std::to_string(cells) + ">", P), bp(-1) {}
+
+    // == Rk,j(t) - Jk, k == vl->id
+    int64_t delayFunc(int64_t t, Vlink* vl) const;
+
+    // == Rk,j(q)* - Jk, k == vl->id
+    int64_t delayFuncRem(int q, Vlink* vl);
+
+    Error calcCommon(Vlink* vl) override;
+
+private:
+    int64_t bp;
+};
+
+// OqB without packet FIFO
+class OqCellB : public PortDelays
+{
+public:
+    explicit OqCellB(Port* port)
+        : PortDelays(port, "OqCellB", B), bp(-1) {}
+
+    // == Rk,j(t) - Jk, k == vl->id
+    int64_t delayFunc(int64_t t, Vlink* vl) const;
+
+    // == Rk,j(q)* - Jk, k == vl->id
+    int64_t delayFuncRem(int q, Vlink* vl);
+
+    Error calcCommon(Vlink* vl) override;
+
+private:
+    int64_t bp;
+};
+
+// two different schemes stitched together.
+// although, works correctly only if Scheme1 out delay is calculated
+// as if next (not current) switch has cell type P
+template<class Scheme1, class Scheme2, PortDelays::celltype_t ct>
+class TwoSchemes : public PortDelays
+{
+    static_assert(std::is_base_of<PortDelays, Scheme1>::value && std::is_base_of<PortDelays, Scheme2>::value,
+                  "parameters of TwoSchemes must inherit from PortDelays");
+public:
+    explicit TwoSchemes(Port* port)
+        : PortDelays(port, "TwoSchemes", ct),
+        midDelaysReady(false), scheme1(port), scheme2(port)
+    {
+        schemeName += "<" + scheme1.schemeName + ", " + scheme2.schemeName + ">";
+    }
+
+    Error calcCommon(Vlink* vl) override;
+
+private:
+    bool midDelaysReady;
+    Scheme1 scheme1;
+    Scheme2 scheme2;
+};
+
+using OqA = TwoSchemes<OqPacket<true>, OqPacket<>, PortDelays::A>;
+using OqB = TwoSchemes<OqCellB, OqPacket<>, PortDelays::B>;
 
 // == Rk,j(t) - Jk, k == curVlId
 template<bool cells>
@@ -256,19 +216,16 @@ int64_t OqPacket<cells>::delayFunc(int64_t t, Vlink* curVl) const {
 // == Rk,j(q)* - Jk, k == curVlId
 template<bool cells>
 int64_t OqPacket<cells>::delayFuncRem(int q, Vlink* curVl) {
-    if(delayFuncRemConstPart == std::numeric_limits<int64_t>::min()) {
-        // delayFuncRemConstPart wasn't calculated
-        delayFuncRemConstPart = -bp;
-        for(auto [vlId, delay]: inDelays) {
-            auto vl = delay.vl();
-            delayFuncRemConstPart += numPacketsUp(bp - vl->smax, vl->bagB, delay.jit()) * vl->smax;
-        }
+    int64_t value = 0;
+    int64_t bags = (q - 1) * curVl->bagB;
+    for(auto [vlId, delay]: inDelays) {
+        auto vl = delay.vl();
+        value += vl->smax * (
+                vl->id != curVl->id
+                ? numPacketsUp(std::min(bp - curVl->smax, bags), vl->bagB, delay.jit())
+                : q);
     }
-    int64_t curJit = getInDelay(curVl->id).jit();
-    return delayFuncRemConstPart
-           + (q + 1 - numPacketsUp(bp - curVl->smax, curVl->bagB, curJit)) * curVl->smax
-           + ramp(curJit - ramp(curVl->smax + (q - 1) * curVl->bagB - bp))
-           - curJit;
+    return std::min(bp, value) - bags;
 }
 
 template<bool cells>
@@ -349,21 +306,8 @@ Error OqPacket<cells>::calcCommon(Vlink* curVl) {
     return Error::Success;
 }
 
-template<bool cells>
-Error OqPacket<cells>::calcFirst(Vlink* vl) {
-    int64_t dmin = vl->smin;
-    int64_t jit = vl->jit0b + vl->smax - vl->smin;
-    setDelay(DelayData(vl, dmin, jit));
-    return Error::Success;
-}
-
-template<bool cells>
-DelayData OqPacket<cells>::e2e(int vlId) const {
-    return getDelay(vlId);
-}
-
-template<class Scheme1, class Scheme2>
-Error TwoSchemes<Scheme1, Scheme2>::calcCommon(Vlink* curVl) {
+template<class Scheme1, class Scheme2, PortDelays::celltype_t ct>
+Error TwoSchemes<Scheme1, Scheme2, ct>::calcCommon(Vlink* curVl) {
     if(!midDelaysReady) {
         scheme1.setInDelays(inDelays);
         for(auto [vlId, delay]: inDelays) {
@@ -380,7 +324,12 @@ Error TwoSchemes<Scheme1, Scheme2>::calcCommon(Vlink* curVl) {
     if(err) {
         return err;
     }
-    setDelay(completeDelay(scheme2.getDelay(curVl->id)));
+    auto delay = scheme2.getDelay(curVl->id);
+    int64_t dmax = delay.dmax() + trMax(curVl) - scheme2.trMax(curVl);
+    int64_t dmin = delay.dmin() + trMin(curVl) - scheme2.trMax(curVl);
+    assert(dmin <= dmax);
+    setDelay(DelayData(curVl, dmin, dmax - dmin));
+
     return Error::Success;
 }
 

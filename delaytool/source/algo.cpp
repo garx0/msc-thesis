@@ -43,26 +43,6 @@ Port* Device::fromOutPort(int outPortId) const {
     return device->getPort(inPortId);
 }
 
-
-//std::vector<Vnode*> Device::fromOutPort(int portId) const {
-//    std::vector<Vnode*> ans;
-//    for(auto port: getAllPorts()) {
-//        for(auto vnode: port->getAllVnodes()) {
-//            for(const auto &next: vnode->next) {
-//                if(next->outPrev == portId) {
-//                    ans.push_back(next.get());
-//                    break;
-//                }
-//            }
-//        }
-//    }
-//    for(auto vl: sourceFor) {
-//        assert(vl->src->next.size() == 1);
-//        ans.push_back(vl->src->next[0].get());
-//    }
-//    return ans;
-//}
-
 Port* Device::getPort(int portId) const {
     auto found = ports.find(portId);
     assert(found != ports.end());
@@ -382,6 +362,25 @@ void PortDelays::setDelay(DelayData delay) {
     delays[delay.vl()->id] = delay;
 }
 
+int64_t PortDelays::trMax(Vlink* vl) const {
+    switch(cellType) {
+        case P: return vl->smax;
+        case A: return vl->smax + vl->config->cellSize * (vl->smax % vl->config->cellSize != 0)
+                       - vl->smax % vl->config->cellSize + vl->config->cellSize; // sizeRound(smax, cellSize) + cellSize
+        case B: return vl->config->cellSize * 2;
+        default: return 0;
+    }
+}
+
+int64_t PortDelays::trMin(Vlink* vl) const {
+    switch(cellType) {
+        case P: return vl->smin;
+        case A: return vl->smin;
+        case B: return std::min(vl->smin, vl->config->cellSize);;
+        default: return 0;
+    }
+}
+
 Error PortDelays::calc(Vlink* vl, bool first) {
     if(delays[vl->id].ready()) {
         return Error::Success;
@@ -390,13 +389,23 @@ Error PortDelays::calc(Vlink* vl, bool first) {
 //        auto start = std::chrono::high_resolution_clock::now(); // DEBUG
         auto err = calcCommon(vl);
 //        printf("[port %d %*s] (vl %d calcCommon) %lu indelays, %lu delays : %ld us\n",
-//                port->id, 40, type.c_str(), vl, inDelays.size(), delays.size(),
+//                port->id, 40, schemeName.c_str(), vl, inDelays.size(), delays.size(),
 //                std::chrono::duration_cast<std::chrono::microseconds>(
 //                        (std::chrono::high_resolution_clock::now() - start)).count()); // DEBUG
         return err;
     } else {
-        return calcFirst(vl);
+        setDelay(DelayData(vl, trMin(vl), vl->jit0b + trMax(vl) - trMin(vl)));
+        return Error::Success;
     }
+}
+
+DelayData PortDelays::e2e(int vlId) const {
+    auto delay = getDelay(vlId);
+    auto vl = delay.vl();
+    assert(delay.ready());
+    int64_t dmin = delay.dmin() - trMin(vl) + vl->smax;
+    int64_t dmax = delay.dmax() - trMax(vl) + vl->smin;
+    return DelayData(vl, dmin, dmax - dmin);
 }
 
 DelayData PortDelays::getFromMap(int vl, const std::map<int, DelayData> &delaysMap) {
@@ -421,7 +430,7 @@ PortDelaysOwn PortDelaysFactory::Create(const std::string& name, Port* port) {
     if(found != creators.end()) {
         return found->second->Create(port);
     } else {
-        throw std::logic_error("invalid PortDelays type");
+        throw std::logic_error("invalid PortDelays schemeName");
     }
 }
 
