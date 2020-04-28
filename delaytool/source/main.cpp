@@ -33,14 +33,14 @@ int main(int argc, char* argv[]) {
                         {"oqp", "OqPacket"},
                         {"oqa", "OqA"},
                         {"oqb", "OqB"},
-                        {"oqc", "OqC"}, // DEBUG
+                        {"oqc", "OqCellB"}, // DEBUG
                         {"mock", "Mock"}, // DEBUG
                 };
                 auto found = mapping.find(strToLower(value));
                 if(found != mapping.end()) {
                     return found->second;
                 } else {
-                    throw std::runtime_error("bad value of -s");
+                    throw std::runtime_error("invalid value of -s");
                 }
             });
 
@@ -109,18 +109,18 @@ int main(int argc, char* argv[]) {
         return 0;
     }
     if(printConfig) {
-        DebugInfo(config.get()); // DEBUG
+        DebugInfo(config.get());
     }
     Error calcErr = config->detectCycles(false);
     if(calcErr) {
-        fprintf(stderr, "error calculating delay because of bad VL configuration: %s, %s\n",
+        fprintf(stderr, "error calculating delay because of invalid VL configuration: %s, %s\n",
                 calcErr.TypeString().c_str(), calcErr.Verbose().c_str());
         fclose(fpOut);
         return 0;
     }
     calcErr = config->calcE2e(printDelays);
     if(calcErr) {
-        fprintf(stderr, "error calculating delay because of bad VL configuration: %s, %s\n",
+        fprintf(stderr, "error calculating delay because of invalid VL configuration: %s, %s\n",
                 calcErr.TypeString().c_str(), calcErr.Verbose().c_str());
         fclose(fpOut);
         return 0;

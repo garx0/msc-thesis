@@ -90,7 +90,7 @@ int main(int argc, char* argv[]) {
             break;
         }
         assert(!cycleErr.VerboseRaw().empty());
-        printf("%s\n", cycleErr.Verbose().c_str()); // DEBUG
+        printf("%s\n", cycleErr.Verbose().c_str());
         std::vector<int> deleteArgs = TokenizeCsv(cycleErr.VerboseRaw());
         std::set<int> pathArgs;
         for(auto it = deleteArgs.begin() + 1; it != deleteArgs.end(); ++it) {

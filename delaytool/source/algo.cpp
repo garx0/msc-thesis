@@ -3,7 +3,6 @@
 #include <vector>
 #include <cmath>
 #include <random>
-//#include <chrono>
 #include "algo.h"
 #include "delay.h"
 
@@ -31,7 +30,7 @@ bool operator!=(Error::ErrorType lhs, const Error& rhs) {
 
 void Device::AddPorts(const std::vector<int>& portIds) {
     for(int i: portIds) {
-        // у нас есть только номер порта.
+        // we only have port number
         ports[i] = std::make_unique<Port>(this, i);
     }
 }
@@ -170,34 +169,31 @@ Error Vnode::prepareTest(bool shuffle) {
                     return err;
                 }
             }
-//            printf("%svl %d-%d calling prepareCalc on vl %d-%d\n",
-//                   "", vl->id, device->id, curVnode->vl->id, curVnode->device->id); // DEBUG
         }
     }
     cycleState = Prepared;
     return Error::Success;
 }
 
-Error Vnode::prepareCalc(std::string debugPrefix) { // DEBUG in signature
+Error Vnode::prepareCalc() {
     assert(prev != nullptr);
+    Error err;
     if(prev->prev == nullptr) {
-        in->delays->calc(vl, true);
+        err = in->delays->calc(vl, true);
+        if(err) {
+            return err;
+        }
     } else {
-        Error err;
         std::map<int, DelayData> requiredDelays;
         Port* fromOutPort = prev->device->fromOutPort(outPrev);
         for(auto vnodeNext: fromOutPort->getAllVnodes()) {
             auto curVnode = vnodeNext->prev;
             if(!curVnode->calcPrepared) {
-                err = curVnode->prepareCalc(debugPrefix+"  ");
+                err = curVnode->prepareCalc();
                 if(err) {
                     return err;
                 }
             }
-//            printf("%svl %d-%d calling prepareCalc on vl %d-%d\n",
-//                   debugPrefix.c_str(), vl->id, device->id, curVnode->vl->id, curVnode->device->id); // DEBUG
-//            printf("%svl %d-%d calling prepareCalc on vl %d-%d\n",
-//                   "", vl->id, device->id, curVnode->vl->id, curVnode->device->id); // DEBUG
             int vlId = curVnode->vl->id;
             auto delay = curVnode->in->delays->getDelay(vlId);
             assert(delay.ready());
@@ -208,13 +204,6 @@ Error Vnode::prepareCalc(std::string debugPrefix) { // DEBUG in signature
         if(err) {
             return err;
         }
-            // DEBUG
-//        for(auto [vlId, delay]: requiredDelays) {
-//            printf("in delays: [vl %d] dmax=%ld dmin=%ld\n", vlId, delay.dmax(), delay.dmin());
-//        }
-//        auto outDelay = in->delays->getDelay(vl->id);
-//        printf("out delay: [vl %d] dmax=%ld dmin=%ld\n", vl->id, outDelay.dmax(), outDelay.dmin());
-            // /DEBUG
     }
     calcPrepared = true;
     return Error::Success;
@@ -257,7 +246,6 @@ void Vnode::_getAllDests(std::vector<const Vnode*> &vec) const {
 Error VlinkConfig::calcE2e(bool print) {
     for(auto vl: getAllVlinks()) {
         for(auto [_, vnode]: vl->dst) {
-            //        printf("\ncalling calcE2e on vlink %d device %d\n", vnode->vl->id, vnode->device->id); // DEBUG
             Error err = vnode->calcE2e();
             if(err) {
                 return err;
@@ -273,7 +261,7 @@ Error VlinkConfig::calcE2e(bool print) {
     }
     if(scheme == "voqa" || scheme == "voqb") {
         for(auto device: getAllDevices()) {
-            // проверить суммы по входным портам коммутатора
+            // check sums by switch input ports
             if(device->type != Device::Switch) {
                 continue;
             }
@@ -296,7 +284,6 @@ Error VlinkConfig::detectCycles(bool shuffle) {
     auto order = idxRange(dests.size(), shuffle);
     for(auto idx: order) {
         auto vnode = dests[idx];
-//        printf("\ncalling calcE2e on vlink %d device %d\n", vnode->vl->id, vnode->device->id); // DEBUG
         Error err = vnode->prepareTest(shuffle);
         if(err) {
             return err;
@@ -386,12 +373,7 @@ Error PortDelays::calc(Vlink* vl, bool first) {
         return Error::Success;
     }
     if(!first) {
-//        auto start = std::chrono::high_resolution_clock::now(); // DEBUG
         auto err = calcCommon(vl);
-//        printf("[port %d %*s] (vl %d calcCommon) %lu indelays, %lu delays : %ld us\n",
-//                port->id, 40, schemeName.c_str(), vl, inDelays.size(), delays.size(),
-//                std::chrono::duration_cast<std::chrono::microseconds>(
-//                        (std::chrono::high_resolution_clock::now() - start)).count()); // DEBUG
         return err;
     } else {
         setDelay(DelayData(vl, trMin(vl), vl->jit0b + trMax(vl) - trMin(vl)));
@@ -422,7 +404,7 @@ void PortDelaysFactory::RegisterAll() {
     AddCreator<OqPacket<>>("OqPacket");
     AddCreator<OqA>("OqA");
     AddCreator<OqB>("OqB");
-    AddCreator<OqCellB>("OqC"); // DEBUG
+    AddCreator<OqCellB>("OqCellB"); // DEBUG
 }
 
 PortDelaysOwn PortDelaysFactory::Create(const std::string& name, Port* port) {

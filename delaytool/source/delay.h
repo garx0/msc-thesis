@@ -274,26 +274,11 @@ Error OqPacket<cells>::calcCommon(Vlink* curVl) {
         }
     }
 
-    // DEBUG
-//    int64_t delayFuncMax2 = -1;
-//    for(int64_t t = 0; t <= bp - curVl->smax; t++) {
-//        delayFuncValue = delayFunc(t, curVlId);
-//        if(delayFuncValue > delayFuncMax2) {
-//            delayFuncMax2 = delayFuncValue;
-//        }
-//    }
-//    assert(delayFuncMax == delayFuncMax2);
-//    printf("--------------------------------DELAYFUNC MAX CALC COMPARE: %ld <= %ld\n", delayFuncMax, delayFuncMax2);
-//    printf("delayFunc max = %ld\n", delayFuncMax);
-    // /DEBUG
-
     // calc delayFuncRem in chosen points
     int qMin = numPacketsUp(bp - curVl->smin, curVl->bagB, 0);
     int qMax = numPackets(bp, curVl->bagB, curDelay.jit());
-//    printf("qmin=%d, qmax=%d\n", qMin, qMax); // DEBUG
     for(int q = qMin; q <= qMax; q++) {
         delayFuncValue = delayFuncRem(q, curVl);
-//        printf("delayFuncRem(%d) = %ld\n", q, delayFuncValue); // DEBUG
         if(delayFuncValue > delayFuncMax) {
             delayFuncMax = delayFuncValue;
         }
@@ -317,7 +302,6 @@ Error TwoSchemes<Scheme1, Scheme2, ct>::calcCommon(Vlink* curVl) {
             }
         }
         scheme2.setInDelays(scheme1.getDelays());
-//        printf("counted middelays\n");
         midDelaysReady = true;
     }
     Error err = scheme2.calc(curVl);

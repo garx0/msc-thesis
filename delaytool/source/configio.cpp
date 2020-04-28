@@ -103,7 +103,7 @@ VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme,
         }
         config->vlinks[number] = std::make_unique<Vlink>(config.get(), number, paths, bag, smax, smin, jit0);
     }
-    printf("%ld vlinks\n", config->vlinks.size()); // DEBUG
+    printf("%ld vlinks\n", config->vlinks.size());
     return config;
 }
 
@@ -144,17 +144,6 @@ bool toXml(VlinkConfig* config, tinyxml2::XMLDocument& doc) {
         }
     }
     return true;
-}
-
-// not used
-void VlinkSubTreeDebugInfo(const Vnode* vnode) {
-    printf("vnode %d, input port %d, after %d\n",
-           vnode->device->id,
-           vnode->in ? vnode->in->id : -1,
-           vnode->prev ? vnode->prev->device->id : -1);
-    for(const auto& nxt: vnode->next) {
-        VlinkSubTreeDebugInfo(nxt.get());
-    }
 }
 
 void VlinkPathDebugInfo(const Vnode* dest, const std::string& prefix) {

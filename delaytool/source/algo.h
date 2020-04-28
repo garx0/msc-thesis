@@ -34,7 +34,7 @@ std::vector<int> idxRange(int size, bool shuffle);
 
 class Error {
 public:
-    enum ErrorType {Success, Cycle, BadForVoq, BpDiverge};
+    enum ErrorType {Success, Cycle, VoqOverload, BpDiverge};
 
     Error(ErrorType type = Success, const std::string& verbose = "", const std::string& verboseRaw = "")
         : type(type), verbose(verbose), verboseRaw(verboseRaw) {}
@@ -61,8 +61,8 @@ public:
                 return "Success";
             case Cycle:
                 return "Cycle";
-            case BadForVoq:
-                return "BadForVoq";
+            case VoqOverload:
+                return "VoqOverload";
             case BpDiverge:
                 return "BpDiverge";
         }
@@ -305,6 +305,8 @@ public:
     // random order of data dependency graph traversal if shuffle=true
     Error calcE2e();
 
+    // find cycles in data dependency graph of VL configuration
+    // random order of data dependency graph traversal if shuffle=true
     Error prepareTest(bool shuffle = false);
 
     Vnode* selectNext(int deviceId) const;
@@ -314,8 +316,7 @@ public:
 
 private:
     // prepare input delay data for calculation of delay of this vnode AND calculate this delay
-    // random order of data dependency graph traversal if shuffle=true
-    Error prepareCalc(std::string debugPrefix = ""); // DEBUG in signature
+    Error prepareCalc();
 
     // recursive helper function for getAllDests()
     void _getAllDests(std::vector<const Vnode*>& vec) const;
