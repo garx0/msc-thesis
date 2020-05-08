@@ -83,6 +83,14 @@ std::vector<Vnode*> Port::getAllVnodes() const {
     return res;
 }
 
+double Port::bwUsage() const {
+    double sum = 0;
+    for(auto vnode: getAllVnodes()) {
+        sum += static_cast<double>(vnode->vl->smax) / vnode->vl->bagB;
+    }
+    return sum;
+}
+
 Vlink::Vlink(VlinkConfig* config, int id, std::vector<std::vector<int>> paths,
     int bag, int smax, int smin, double jit0)
     : config(config), id(id), bag(bag), bagB(bag * config->linkRate),
@@ -335,6 +343,16 @@ std::vector<Device*> VlinkConfig::getAllDevices() const {
 }
 
 VlinkConfig::VlinkConfig(): factory(std::make_unique<PortDelaysFactory>()) {}
+
+std::map<int, double> VlinkConfig::bwUsage() {
+    std::map<int, double> res;
+    for(auto device: getAllDevices()) {
+        for(auto port: device->getAllPorts()) {
+            res[port->id] = port->bwUsage();
+        }
+    }
+    return res;
+}
 
 void PortDelays::setInDelays(const std::map<int, DelayData> &values) {
     inDelays = values;

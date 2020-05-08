@@ -111,6 +111,15 @@ int main(int argc, char* argv[]) {
     if(printConfig) {
         DebugInfo(config.get());
     }
+    auto bwUsage = config->bwUsage();
+    if(!bwCorrect(bwUsage)) {
+        fprintf(stderr, "error: bandwidth usage is more than 100%%\n");
+        fclose(fpOut);
+        return 0;
+    }
+    auto bwStats = getStats(bwUsage);
+    printf("bwUsage: min=%f, max=%f, mean=%f, var=%f\n",
+            bwStats.min, bwStats.max, bwStats.mean, bwStats.var);
     Error calcErr = config->detectCycles(false);
     if(calcErr) {
         fprintf(stderr, "error calculating delay because of invalid VL configuration: %s, %s\n",

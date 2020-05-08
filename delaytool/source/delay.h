@@ -3,7 +3,7 @@
 #define DELAYTOOL_DELAY_H
 #include "algo.h"
 
-constexpr int64_t maxBpIter = 10000;
+constexpr int64_t maxBpIter = 100000;
 
 // floor(x/y)
 inline int64_t floordiv(int64_t x, int64_t y) {

@@ -20,6 +20,13 @@ VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme,
 // (e.g. doc used for building config)
 bool toXml(VlinkConfig* config, tinyxml2::XMLDocument& doc);
 
+struct stats_t {double min, max, mean, var;};
+
+stats_t getStats(std::map<int, double> data);
+
+// check if bandwidth usage of any link is <= 100%
+bool bwCorrect(std::map<int, double> bwUsage);
+
 void DebugInfo(const VlinkConfig* config);
 
 #endif //DELAYTOOL_CONFIGIO_H

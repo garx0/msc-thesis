@@ -4,6 +4,7 @@
 #include <map>
 #include <string>
 #include <cassert>
+#include <cmath>
 #include <sstream>
 #include <memory>
 #include "configio.h"
@@ -141,6 +142,37 @@ bool toXml(VlinkConfig* config, tinyxml2::XMLDocument& doc) {
             Vnode* vnode = found->second;
             path->SetAttribute("maxDelay", vnode->e2e.dmax());
             path->SetAttribute("maxJit", vnode->e2e.jit());
+        }
+    }
+    return true;
+}
+
+stats_t getStats(std::map<int, double> data) {
+    assert(!data.empty());
+    double min = data.begin()->second;
+    double max = min;
+    double sum = 0;
+    double sum2 = 0;
+    for(auto [_, val]: data) {
+        if(val < min) {
+            min = val;
+        }
+        if(val > max) {
+            max = val;
+        }
+        sum += val;
+        sum2 += val * val;
+    }
+    size_t n = data.size();
+    double mean = sum / n;
+    double var = sqrt((sum2 - sum * sum / n) / (n - 1));
+    return {min, max, mean, var};
+}
+
+bool bwCorrect(std::map<int, double> bwUsage) {
+    for(auto [_, val]: bwUsage) {
+        if(val > 1.) {
+            return false;
         }
     }
     return true;

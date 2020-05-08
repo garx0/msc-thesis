@@ -107,22 +107,24 @@ class VlinkConfig
 public:
     VlinkConfig();
 
-    int64_t linkRate; // in byte/ms
+    int64_t linkRate; // R, byte/ms
     std::string scheme;
-    int cellSize; // sigma, bytes
+    int cellSize; // σ, bytes
     int voqL; // for scheme == "VoqA", "VoqB"
     std::map<int, VlinkOwn> vlinks;
     std::map<int, DeviceOwn> devices;
     std::map<int, int> _portDevice; // get device ID by input/output port ID
-    std::map<int, int> links;
+    std::map<int, int> links; // port1 id -> id of port2 connected with port1 via link
     PortDelaysFactoryOwn factory;
 
     Vlink* getVlink(int id) const;
 
     Device* getDevice(int id) const;
 
+    // get id of input/output port connected by link with output/input port 'portId'
     int connectedPort(int portId) const;
 
+    // get device ID by input/output port ID
     int portDevice(int portId) const;
 
     std::vector<Vlink*> getAllVlinks() const;
@@ -135,6 +137,11 @@ public:
 
     Error detectCycles(bool shuffle = false);
 
+    // calculate bwUsage() values on all input ports and return them as map by port number
+    std::map<int, double> bwUsage();
+
+    // convert from linkByte measure unit to ms
+    // (by division by link rate in byte/ms)
     double linkByte2ms(int64_t linkByte) { return static_cast<double>(linkByte) / linkRate; }
 };
 
@@ -171,7 +178,6 @@ public:
     const int id;
     const Type type;
 
-
     std::map<int, PortOwn> ports; // input ports
     std::vector<Vlink*> sourceFor; // Vlinks which have this device as source
 
@@ -200,6 +206,11 @@ public:
     Vnode* getVnode(int vlId) const;
 
     std::vector<Vnode*> getAllVnodes() const;
+
+    // usage ratio of the connected link bandwidth by VLs
+    // must be in [0,1] if VL config is correct
+    // calculated as sum of smax/bag/linkRate by VLs that using this port
+    double bwUsage() const;
 };
 
 // time is measured in bytes through link = (time in ms) * (link rate in byte/ms) / (1 byte)
