@@ -66,7 +66,7 @@ int main(int argc, char* argv[]) {
 
     program.add_argument("-j", "--jitdef")
             .action([](const std::string& value) { return std::stof(value); })
-            .default_value(500.f)
+            .default_value(static_cast<float>(jitStartDefault))
             .help("default start jitter in microseconds if not specified in input data (default: 500)");
 
     program.add_argument("-r", "--rate")

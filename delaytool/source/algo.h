@@ -148,7 +148,7 @@ public:
 class Vlink
 {
 public:
-    Vlink(VlinkConfig* config, int id, std::vector<std::vector<int>> paths,
+    Vlink(VlinkConfig* config, int id, int srcId, std::vector<std::vector<int>> paths,
           int bag, int smax, int smin, double jit0);
 
     VlinkConfig* const config;
@@ -298,14 +298,16 @@ protected:
 class Vnode
 {
 public:
-    Vnode(Vlink* vlink, int deviceId, Vnode* prev);
+    Vnode(Vlink* vlink, int portId, Vnode* prev);
+
+    Vnode(Vlink* vlink, int srcId); // for source end system
 
     VlinkConfig* const config;
     Vlink* const vl;
-    Port* in; // in port of this device
-    std::vector<VnodeOwn> next;
-    Vnode* const prev; // (also == vnode of same Vlink from prev device's ports, which is unambiguous)
     Device* const device; // == in->device
+    Vnode* const prev; // (also == vnode of same Vlink from prev device's ports, which is unambiguous)
+    Port* const in; // in port of this device
+    std::vector<VnodeOwn> next;
     int outPrev; // == in->outPrev - id of out port of prev device
     enum {NotVisited, VisitedNotPrepared, Prepared} cycleState; // for cycle detecting
     bool calcPrepared;

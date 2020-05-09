@@ -89,6 +89,7 @@ VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme,
     {
         std::vector<std::vector<int>> paths;
         int number = std::stoi(vl->Attribute("number"));
+        int srcId = std::stoi(vl->Attribute("source"));
         int bag = std::stoi(vl->Attribute("bag"));
         int smin = sminDefault; // default
         int smax = std::stoi(vl->Attribute("lmax"));
@@ -99,10 +100,10 @@ VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme,
             pathEl = pathEl->NextSiblingElement("path"))
         {
             std::vector<int> path = TokenizeCsv(pathEl->Attribute("path"));
-            assert(!path.empty() && path[path.size()-1] == std::stoi(pathEl->Attribute("dest")));
+            assert(!path.empty());
             paths.push_back(path);
         }
-        config->vlinks[number] = std::make_unique<Vlink>(config.get(), number, paths, bag, smax, smin, jit0);
+        config->vlinks[number] = std::make_unique<Vlink>(config.get(), number, srcId, paths, bag, smax, smin, jit0);
     }
     printf("%ld vlinks\n", config->vlinks.size());
     return config;
@@ -205,6 +206,7 @@ void DebugInfo(const VlinkConfig* config) {
         for(auto port: device->getAllPorts()) {
             printf("\tinput port %d:", port->id);
             auto inVnodes = port->getAllVnodes();
+            printf(" %ld vls:", inVnodes.size());
             if(!inVnodes.empty()) {
                 printf(" vl");
                 for(auto vnode: inVnodes) {
@@ -214,6 +216,7 @@ void DebugInfo(const VlinkConfig* config) {
             printf("\n");
             printf("\toutput port %d:", port->id);
             auto outVnodes = device->fromOutPort(port->id)->getAllVnodes();
+            printf(" %ld vls:", outVnodes.size());
             if(!outVnodes.empty()) {
                 printf(" vl");
                 for(auto vnode: outVnodes) {

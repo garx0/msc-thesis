@@ -91,30 +91,28 @@ double Port::bwUsage() const {
     return sum;
 }
 
-Vlink::Vlink(VlinkConfig* config, int id, std::vector<std::vector<int>> paths,
+Vlink::Vlink(VlinkConfig* config, int id, int srcId, std::vector<std::vector<int>> paths,
     int bag, int smax, int smin, double jit0)
     : config(config), id(id), bag(bag), bagB(bag * config->linkRate),
     smax(smax), smin(smin), jit0(jit0), jit0b(std::ceil(jit0 * config->linkRate))
 {
-    assert(!paths.empty() && paths[0].size() >= 2);
-    int srcId = paths[0][0];
-    src = std::make_unique<Vnode>(this, srcId, nullptr);
+    assert(!paths.empty());
+    src = std::make_unique<Vnode>(this, srcId);
     src->device->sourceFor.push_back(this);
 
     for(const auto& path: paths) {
-        assert(path[0] == srcId);
-        size_t i = 0;
+        int i = -1;
         Vnode* vnodeNext = src.get();
         Vnode* vnode = vnodeNext; // unnecessary if src != nullptr
         while(vnodeNext != nullptr) {
-            assert(i < path.size() - 1);
+//            assert(i < path.size() - 1);
             vnode = vnodeNext;
             vnodeNext = vnode->selectNext(path[++i]);
         }
         // vnode is initialized if make_unique didnt returned nullptr
-        // now we need to add a new-made Vnode of device path[i] to vnode->next vector
-        for(; i < path.size(); i++) {
-            vnode->next.push_back(std::make_unique<Vnode>(this, path[i], vnode));
+        // now we need to add a new-made Vnode of input port path[i] to vnode->next vector
+        for(size_t j = i; j < path.size(); j++) {
+            vnode->next.push_back(std::make_unique<Vnode>(this, path[j], vnode));
             vnode = vnode->next[vnode->next.size()-1].get();
         }
         // vnode is a leaf
@@ -122,28 +120,24 @@ Vlink::Vlink(VlinkConfig* config, int id, std::vector<std::vector<int>> paths,
     }
 }
 
-Vnode::Vnode(Vlink* vlink, int deviceId, Vnode* prev)
+Vnode::Vnode(Vlink* vlink, int portId, Vnode* prev)
     : config(vlink->config), vl(vlink),
-      prev(prev), device(vlink->config->getDevice(deviceId)), cycleState(NotVisited), calcPrepared(false), e2e()
+      device(vlink->config->getDevice(vlink->config->portDevice(portId))),
+      prev(prev),
+      in(prev != nullptr ? device->getPort(portId) : nullptr),
+      outPrev(in != nullptr ? in->outPrev : -1),
+      cycleState(NotVisited), calcPrepared(false), e2e()
 {
-    if(prev != nullptr) {
-        // find port by prev->device
-        assert(!device->ports.empty());
-        for(auto curPort: device->getAllPorts()) {
-            assert(curPort->vnodes.find(vl->id) == curPort->vnodes.end()); // else Vlink has cycles by devices
-            if(curPort->prevDevice->id == prev->device->id) {
-                in = curPort;
-                outPrev = in->outPrev;
-                in->vnodes[vl->id] = this;
-                return;
-            }
-        }
-        assert(false);
-    } else {
-        in = nullptr;
-        outPrev = -1;
-    }
+    in->vnodes[vl->id] = this;
 }
+
+// for source end system
+Vnode::Vnode(Vlink* vlink, int srcId)
+    : config(vlink->config), vl(vlink),
+      device(vlink->config->getDevice(srcId)),
+      prev(nullptr), in(nullptr), outPrev(-1),
+      cycleState(NotVisited), calcPrepared(false), e2e()
+{}
 
 Error Vnode::prepareTest(bool shuffle) {
     if(cycleState == NotVisited) {
@@ -225,9 +219,9 @@ Error Vnode::calcE2e() {
     return err;
 }
 
-Vnode* Vnode::selectNext(int deviceId) const {
+Vnode* Vnode::selectNext(int portId) const {
     for(const auto &own: next) {
-        if(own->device->id == deviceId) {
+        if(own->in->id == portId) {
             return own.get();
         }
     }
