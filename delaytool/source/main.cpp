@@ -120,19 +120,23 @@ int main(int argc, char* argv[]) {
     auto bwStats = getStats(bwUsage);
     printf("bwUsage: min=%f, max=%f, mean=%f, var=%f\n",
             bwStats.min, bwStats.max, bwStats.mean, bwStats.var);
-    Error calcErr = config->detectCycles(false);
-    if(calcErr) {
-        fprintf(stderr, "error calculating delay because of invalid VL configuration: %s, %s\n",
-                calcErr.TypeString().c_str(), calcErr.Verbose().c_str());
-        fclose(fpOut);
-        return 0;
-    }
-    calcErr = config->calcE2e(printDelays);
-    if(calcErr) {
-        fprintf(stderr, "error calculating delay because of invalid VL configuration: %s, %s\n",
-                calcErr.TypeString().c_str(), calcErr.Verbose().c_str());
-        fclose(fpOut);
-        return 0;
+    try {
+        Error calcErr = config->detectCycles(false);
+        if(calcErr) {
+            fprintf(stderr, "error calculating delay because of invalid VL configuration: %s, %s\n",
+                    calcErr.TypeString().c_str(), calcErr.Verbose().c_str());
+            fclose(fpOut);
+            return 0;
+        }
+        calcErr = config->calcE2e(printDelays);
+        if(calcErr) {
+            fprintf(stderr, "error calculating delay because of invalid VL configuration: %s, %s\n",
+                    calcErr.TypeString().c_str(), calcErr.Verbose().c_str());
+            fclose(fpOut);
+            return 0;
+        }
+    } catch(std::exception& e) {
+        fprintf(stderr, "error calculating delay because of exception: %s\n", e.what());
     }
     bool ok = toXml(config.get(), doc);
     if(!ok) {

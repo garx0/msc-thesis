@@ -23,92 +23,99 @@ std::vector<int> TokenizeCsv(const std::string& str) {
 }
 
 VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme,
-        int cellSize, int voqPeriod, double jitDefaultValue, int forceLinkRate) {
+        int cellSize, int voqPeriod, double jitDefaultValue, int forceLinkRate)
+{
     VlinkConfigOwn config = std::make_unique<VlinkConfig>();
-    auto afdxxml = doc.FirstChildElement("afdxxml");
-    auto resources = afdxxml->FirstChildElement("resources");
-    config->linkRate = forceLinkRate == 0
-            ? std::stof(resources->FirstChildElement("link")->Attribute("capacity"))
-            : forceLinkRate;
-    config->cellSize = cellSize;
-    config->voqL = voqPeriod;
-    config->scheme = scheme;
+    try {
+        auto afdxxml = doc.FirstChildElement("afdxxml");
+        auto resources = afdxxml->FirstChildElement("resources");
+        config->linkRate = forceLinkRate == 0
+                           ? std::stof(resources->FirstChildElement("link")->Attribute("capacity"))
+                           : forceLinkRate;
+        config->cellSize = cellSize;
+        config->voqL = voqPeriod;
+        config->scheme = scheme;
 
-    for(auto res = resources->FirstChildElement("link");
-        res != nullptr;
-        res = res->NextSiblingElement("link"))
-    {
-        if(forceLinkRate == 0 && std::stof(res->Attribute("capacity")) != config->linkRate) {
-            std::cerr << "error: bad input resources - all links must have the same capacity" << std::endl;
-            return nullptr;
+        for(auto res = resources->FirstChildElement("link");
+             res != nullptr;
+             res = res->NextSiblingElement("link")) {
+            if(forceLinkRate == 0 && std::stof(res->Attribute("capacity")) != config->linkRate) {
+                std::cerr << "error: bad input resources - all links must have the same capacity" << std::endl;
+                return nullptr;
+            }
+            int port1 = std::stoi(res->Attribute("from"));
+            int port2 = std::stoi(res->Attribute("to"));
+            config->links[port1] = port2;
+            config->links[port2] = port1;
         }
-        int port1 = std::stoi(res->Attribute("from"));
-        int port2 = std::stoi(res->Attribute("to"));
-        config->links[port1] = port2;
-        config->links[port2] = port1;
-    }
 
-    std::map<int, std::vector<int>> portNums;
+        std::map<int, std::vector<int>> portNums;
 
-    for(auto res = resources->FirstChildElement("endSystem");
-        res != nullptr;
-        res = res->NextSiblingElement("endSystem"))
-    {
-        std::vector<int> ports = TokenizeCsv(res->Attribute("ports"));
-        if(ports.size() != 1) {
-            std::cerr << "error: bad input - end systems must have one port" << std::endl;
-            return nullptr;
+        for(auto res = resources->FirstChildElement("endSystem");
+             res != nullptr;
+             res = res->NextSiblingElement("endSystem")) {
+            std::vector<int> ports = TokenizeCsv(res->Attribute("ports"));
+            if(ports.size() != 1) {
+                std::cerr << "error: bad input - end systems must have one port" << std::endl;
+                return nullptr;
+            }
+            int number = std::stoi(res->Attribute("number"));
+            config->_portDevice[ports[0]] = number;
+            config->devices[number] = std::make_unique<Device>(config.get(), Device::End, number);
+            portNums[number] = ports;
         }
-        int number = std::stoi(res->Attribute("number"));
-        config->_portDevice[ports[0]] = number;
-        config->devices[number] = std::make_unique<Device>(config.get(), Device::End, number);
-        portNums[number] = ports;
-    }
 
-    for(auto res = resources->FirstChildElement("switch");
-        res != nullptr;
-        res = res->NextSiblingElement("switch"))
-    {
-        int number = std::stoi(res->Attribute("number"));
-        std::vector<int> ports = TokenizeCsv(res->Attribute("ports"));
-        for(auto portId: ports) {
-            config->_portDevice[portId] = number;
+        for(auto res = resources->FirstChildElement("switch");
+             res != nullptr;
+             res = res->NextSiblingElement("switch")) {
+            int number = std::stoi(res->Attribute("number"));
+            std::vector<int> ports = TokenizeCsv(res->Attribute("ports"));
+            for(auto portId: ports) {
+                config->_portDevice[portId] = number;
+            }
+            config->devices[number] = std::make_unique<Device>(config.get(), Device::Switch, number);
+            portNums[number] = ports;
         }
-        config->devices[number] = std::make_unique<Device>(config.get(), Device::Switch, number);
-        portNums[number] = ports;
-    }
-    // add ports
-    for(auto [num, ports] : portNums) {
-        config->getDevice(num)->AddPorts(ports);
-    }
+        // add ports
+        for(auto[num, ports] : portNums) {
+            config->getDevice(num)->AddPorts(ports);
+        }
 
-    auto vls = afdxxml->FirstChildElement("virtualLinks");
-    for(auto vl = vls->FirstChildElement("virtualLink");
-        vl != nullptr;
-        vl = vl->NextSiblingElement("virtualLink"))
-    {
-        std::vector<std::vector<int>> paths;
-        int number = std::stoi(vl->Attribute("number"));
-        int srcId = std::stoi(vl->Attribute("source"));
-        int bag = std::stoi(vl->Attribute("bag"));
-        int smin = sminDefault; // default
-        int smax = std::stoi(vl->Attribute("lmax"));
-        auto jitStr = vl->Attribute("jitStart"); // in us
-        double jit0 = (jitStr ? std::stof(jitStr) : jitDefaultValue) / 1e3; // in ms
-        for(auto pathEl = vl->FirstChildElement("path");
-            pathEl != nullptr;
-            pathEl = pathEl->NextSiblingElement("path"))
-        {
-            std::vector<int> path = TokenizeCsv(pathEl->Attribute("path"));
-            assert(!path.empty());
-            paths.push_back(path);
+        auto vls = afdxxml->FirstChildElement("virtualLinks");
+        for(auto vl = vls->FirstChildElement("virtualLink");
+             vl != nullptr;
+             vl = vl->NextSiblingElement("virtualLink")) {
+            std::vector<std::vector<int>> paths;
+            int number = std::stoi(vl->Attribute("number"));
+            int srcId = std::stoi(vl->Attribute("source"));
+            int bag = std::stoi(vl->Attribute("bag"));
+            int smin = sminDefault; // default
+            int smax = std::stoi(vl->Attribute("lmax"));
+            auto jitStr = vl->Attribute("jitStart"); // in us
+            double jit0 = (jitStr ? std::stof(jitStr) : jitDefaultValue) / 1e3; // in ms
+            for(auto pathEl = vl->FirstChildElement("path");
+                 pathEl != nullptr;
+                 pathEl = pathEl->NextSiblingElement("path")) {
+                std::vector<int> path = TokenizeCsv(pathEl->Attribute("path"));
+                assert(!path.empty());
+                paths.push_back(path);
+            }
+            config->vlinks[number] = std::make_unique<Vlink>(config.get(), number, srcId, paths, bag, smax, smin, jit0);
         }
-        config->vlinks[number] = std::make_unique<Vlink>(config.get(), number, srcId, paths, bag, smax, smin, jit0);
-    }
+        assert(!config->vlinks.empty());
+    } catch(std::exception& e) {
+        fprintf(stderr, "exception while reading vl config: %s\n", e.what());
+        return nullptr;
+    };
     printf("%ld vlinks\n", config->vlinks.size());
+    if(config->scheme == "VoqA" || config->scheme == "VoqB") {
+        printf("VOQ period = %.1f ms\n", config->linkByte2ms(config->voqL * config->cellSize));
+    }
     return config;
 }
 
+// adding maxDelay and maxJit attributes to VL paths with max e2e delay and jitter values in us
+// and scheme attributes for each switch
 // doc must already contain the resources and VL configuration
 // (e.g. doc used for building config)
 bool toXml(VlinkConfig* config, tinyxml2::XMLDocument& doc) {
@@ -141,8 +148,10 @@ bool toXml(VlinkConfig* config, tinyxml2::XMLDocument& doc) {
             auto found = vl->dst.find(deviceId);
             assert(found != vl->dst.end());
             Vnode* vnode = found->second;
-            path->SetAttribute("maxDelay", vnode->e2e.dmax());
-            path->SetAttribute("maxJit", vnode->e2e.jit());
+            path->SetAttribute("maxDelay",
+                    static_cast<int>(ceil(1000. * config->linkByte2ms(vnode->e2e.dmax()))));
+            path->SetAttribute("maxJit",
+                    static_cast<int>(ceil(1000. * config->linkByte2ms(vnode->e2e.jit()))));
         }
     }
     return true;

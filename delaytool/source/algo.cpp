@@ -254,10 +254,11 @@ Error VlinkConfig::calcE2e(bool print) {
             }
             if(print) {
                 DelayData e2e = vnode->e2e;
-                printf("VL %d to %d: maxDelay = %li lB (%.0f us), jit = %li lB (%.0f us)\n",
+                printf("VL %d to %d: maxDelay = %li lB (%.0f us), jit = %li lB (%.0f us), minDelay = %li lB (%.0f us)\n",
                        vnode->vl->id, vnode->device->id,
                        e2e.dmax(), linkByte2ms(e2e.dmax()) * 1e3,
-                       e2e.jit(), linkByte2ms(e2e.jit()) * 1e3);
+                       e2e.jit(), linkByte2ms(e2e.jit()) * 1e3,
+                       e2e.dmax() - e2e.jit(), linkByte2ms(e2e.dmax() - e2e.jit()) * 1e3);
             }
         }
     }
@@ -397,8 +398,10 @@ DelayData PortDelays::e2e(int vlId) const {
     auto delay = getDelay(vlId);
     auto vl = delay.vl();
     assert(delay.ready());
-    int64_t dmin = delay.dmin() - trMin(vl) + vl->smax;
-    int64_t dmax = delay.dmax() - trMax(vl) + vl->smin;
+    int64_t dmin = delay.dmin() - trMin(vl) + vl->smin;
+    int64_t dmax = delay.dmax() - trMax(vl) + vl->smax;
+    assert(dmin >= 0);
+    assert(dmax >= 0);
     return DelayData(vl, dmin, dmax - dmin);
 }
 

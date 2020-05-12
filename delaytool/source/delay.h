@@ -285,7 +285,7 @@ Error OqPacket<cells>::calcCommon(Vlink* curVl) {
     }
     assert(delayFuncMax >= 0);
     int64_t dmax = delayFuncMax + curDelay.dmax();
-    int64_t dmin = curDelay.dmin() + curVl->smin;
+    int64_t dmin = curDelay.dmin() + sizeRound(curVl->smin, config->cellSize, cells);
     assert(dmax >= dmin);
     setDelay(DelayData(curVl, dmin, dmax-dmin));
     return Error::Success;
@@ -309,8 +309,13 @@ Error TwoSchemes<Scheme1, Scheme2, ct>::calcCommon(Vlink* curVl) {
         return err;
     }
     auto delay = scheme2.getDelay(curVl->id);
+    // auto delay1 = scheme1.getInDelay(curVl->id); // DEBUG
+    // auto delay2 = scheme1.getDelay(curVl->id); // DEBUG
     int64_t dmax = delay.dmax() + trMax(curVl) - scheme2.trMax(curVl);
-    int64_t dmin = delay.dmin() + trMin(curVl) - scheme2.trMax(curVl);
+    int64_t dmin = delay.dmin() + trMin(curVl) - scheme2.trMin(curVl);
+    // printf("cellSize = %d, smin = %d, dk = %ld, dk* = %ld, dk** = %ld, trMin = %ld, sch2.trMin = %ld, dmin = %ld\n",
+        // config->cellSize, curVl->smin,
+        // delay1.dmin(), delay2.dmin(), delay.dmin(), trMin(curVl), scheme2.trMin(curVl), dmin); // DEBUG
     assert(dmin <= dmax);
     setDelay(DelayData(curVl, dmin, dmax - dmin));
 

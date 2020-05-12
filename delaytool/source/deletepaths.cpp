@@ -65,6 +65,7 @@ int main(int argc, char* argv[]) {
     bool shuffle = program.get<bool>("--random");
     int seed = program.get<int>("--seed");
 
+    printf("test\n");
     tinyxml2::XMLDocument doc;
     auto err = doc.LoadFile(fileIn.c_str());
     if(err) {
@@ -77,6 +78,7 @@ int main(int argc, char* argv[]) {
         return 0;
     }
     srand(seed);
+    printf("test\n");
     while(true) {
         VlinkConfigOwn config = fromXml(doc, "Mock", cellSizeDefault, voqPeriodDefault);
         if(config == nullptr) {

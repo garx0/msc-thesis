@@ -59,38 +59,46 @@ def convertformat(filename_in, filename_out, seed=0):
         for port in map(int, sw.get('ports').split(',')):
             port_switch[port] = int(sw.get('number'))
 
+    # getting rate of non-multi links
     rate = None
     for link in resources.findall('link'):
         m = link.get('multi')
-        if m is not None:
-            m = int(m)
-        if m is None or m == 1:
+        if m is None or int(m) <= 1:
             local_rate = int(link.get('capacity'))
             if rate is None:
                 rate = local_rate
             elif rate != local_rate:
                 raise Exception("capacity of all non-multi links must be the same")
-        else:
-            link.set('capacity', str(rate))
-            del link.attrib["multi"]
-            ports = (int(link.get('from')), int(link.get('to')))
-            sw_nums = tuple(port_switch.get(port) for port in ports)
-            if sw_nums[0] is None or sw_nums[1] is None:
-                raise Exception("multi link must connect two switches")
-            switches = tuple(resources.find(f"switch[@number='{num}']") for num in sw_nums)
-            print(f"link ({ports[0]}--{ports[1]}) divided into: ", end='')
-            print(f"({ports[0]}--{ports[1]})", end='')
-            for i in range(m - 1):
-                for sw in switches:
-                    max_port_num += 1
-                    # adding new ports to switches
-                    sw.set("ports", sw.get("ports") + "," + str(max_port_num))
-                    port_switch[max_port_num] = int(sw.get('number'))
-                link2 = etree.SubElement(resources, link.tag, link.attrib)
-                link2.set('from', str(max_port_num - 1))
-                link2.set('to', str(max_port_num))
-                print(f", ({max_port_num - 1}--{max_port_num})", end="")
-            print()
+    assert(rate is not None)
+
+    # duplicating links and ports
+    for link in resources.findall('link'):
+        m = link.get('multi')
+        if m is None:
+            continue
+        m = int(m)
+        if m <= 1:
+            continue
+        link.set('capacity', str(rate))
+        del link.attrib["multi"]
+        ports = (int(link.get('from')), int(link.get('to')))
+        sw_nums = tuple(port_switch.get(port) for port in ports)
+        if sw_nums[0] is None or sw_nums[1] is None:
+            raise Exception("multi link must connect two switches")
+        switches = tuple(resources.find(f"switch[@number='{num}']") for num in sw_nums)
+        print(f"link ({ports[0]}--{ports[1]}) divided into: ", end='')
+        print(f"({ports[0]}--{ports[1]})", end='')
+        for i in range(m - 1):
+            for sw in switches:
+                max_port_num += 1
+                # adding new ports to switches
+                sw.set("ports", sw.get("ports") + "," + str(max_port_num))
+                port_switch[max_port_num] = int(sw.get('number'))
+            link2 = etree.SubElement(resources, link.tag, link.attrib)
+            link2.set('from', str(max_port_num - 1))
+            link2.set('to', str(max_port_num))
+            print(f", ({max_port_num - 1}--{max_port_num})", end="")
+        print()
 
     # now resources specification is modified
 
