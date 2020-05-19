@@ -83,10 +83,13 @@ std::vector<Vnode*> Port::getAllVnodes() const {
     return res;
 }
 
-double Port::bwUsage() const {
+double Port::bwUsage(bool cells) const {
     double sum = 0;
     for(auto vnode: getAllVnodes()) {
-        sum += static_cast<double>(vnode->vl->smax) / vnode->vl->bagB;
+        int s = vnode->vl->smax;
+        int c = device->config->cellSize;
+        s += cells * (c * (s % c != 0) - s % c); // sizeRound formula
+        sum += static_cast<double>(s) / vnode->vl->bagB;
     }
     return sum;
 }
@@ -339,11 +342,11 @@ std::vector<Device*> VlinkConfig::getAllDevices() const {
 
 VlinkConfig::VlinkConfig(): factory(std::make_unique<PortDelaysFactory>()) {}
 
-std::map<int, double> VlinkConfig::bwUsage() {
+std::map<int, double> VlinkConfig::bwUsage(bool cells) {
     std::map<int, double> res;
     for(auto device: getAllDevices()) {
         for(auto port: device->getAllPorts()) {
-            res[port->id] = port->bwUsage();
+            res[port->id] = port->bwUsage(cells);
         }
     }
     return res;

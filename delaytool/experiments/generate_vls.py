@@ -6,10 +6,10 @@ def main(argv):
     import random
     from flows_gen import gen_flows
     from convertformat import convertformat
-    # argv: test_arch output_dir n_tests n_msgs
-    #       msg_size_min msg_size_max period_min period_max
-    #       tmax_min tmax_max n_dests_min n_dests_max seed
-    assert(len(argv) >= 13)
+    if(len(argv) < 13):
+        print(
+f"usage: python {argv[0]} arch output_dir n_tests n_msgs msg_size_min msg_size_max period_min period_max tmax_min tmax_max n_dests_min n_dests_max [random_seed]")
+        return
     seed = 0
     if(len(argv) >= 14):
         seed = int(argv[13])

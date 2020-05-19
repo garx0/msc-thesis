@@ -143,7 +143,7 @@ def convertformat(filename_in, filename_out, seed=0):
 
 def main(argv):
     if(len(argv) < 3):
-        print(f"usage: {argv[0]} filename_in filename_out [random seed]")
+        print(f"usage: python {argv[0]} filename_in filename_out [random seed]")
         return
     seed = 0
     if len(argv) >= 4:

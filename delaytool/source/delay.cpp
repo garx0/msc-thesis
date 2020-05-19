@@ -3,17 +3,17 @@
 #include "delay.h"
 
 int64_t busyPeriod(const std::map<int, DelayData>& inDelays, VlinkConfig* config, bool byTick) {
-    int it = 0;
+    uint64_t it = 1;
     int64_t bp = 1;
     int64_t bpPrev = 0;
-    while(bp != bpPrev) {
+    for(; bp != bpPrev; it++) {
         bpPrev = bp;
         bp = 0;
         for(auto [vlId, delay]: inDelays) {
             auto vl = delay.vl();
             bp += numPackets(bpPrev, vl->bagB, delay.jit()) * sizeRound(vl->smax, config->cellSize, byTick);
         }
-        if(++it >= maxBpIter) {
+        if(config->bpMaxIter != 0 && it >= config->bpMaxIter) {
             return -1;
         }
     }
@@ -132,7 +132,7 @@ Error VoqB::calcCommon(Vlink* vl) {
     int64_t localMaxDelay;
     int64_t nCells = ceildiv(vl->smax, config->cellSize);
     if(nCells < config->voqL) {
-        localMaxDelay = (nCells + config->voqL + outPrevLoadSum * 2 + 1) * config->cellSize - vl->smin;
+        localMaxDelay = (config->voqL + outPrevLoadSum + 1) * 2 * config->cellSize;
     } else {
         localMaxDelay = (nCells + config->voqL * 2 + 1) * config->cellSize;
     }
@@ -178,15 +178,7 @@ Error OqCellB::calcCommon(Vlink* curVl) {
     if(bp < 0) {
         bp = busyPeriod(inDelays, config, true);
         if(bp < 0) {
-            std::string verbose =
-                    "overload on output port "
-                    + std::to_string(port->outPrev)
-                    + " of switch "
-                    + std::to_string(port->prevDevice->id)
-                    + " because busy period calculation took over "
-                    + std::to_string(maxBpIter)
-                    + " iterations";
-            return Error(Error::BpDiverge, OqOverloadVerbose(port));
+            return Error(Error::BpTooLong, OqOverloadVerbose(port));
         }
     }
     int64_t curSizeRound = sizeRound(curVl->smax, config->cellSize);

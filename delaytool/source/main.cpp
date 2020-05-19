@@ -74,6 +74,18 @@ int main(int argc, char* argv[]) {
             .default_value(0)
             .help("change (force) link rate to specified value, in byte/ms");
 
+    program.add_argument("-f", "--factor")
+            .action([](const std::string& value) { return std::stof(value); })
+            .default_value(1.f)
+            .help("multiply max packet size for all VLs by factor (and cast to integer)");
+
+    program.add_argument("--bpmaxit")
+            .action([](const std::string& value) { return static_cast<uint64_t>(std::stof(value)); })
+            .default_value(static_cast<uint64_t>(100000))
+            .help(std::string("max number of iterations of calculating busy period for oqp/oqa/oqb.\n")
+                  + "its calculation won't be endless because its parameters are checked for a sign of this earlier,"
+                  + "but it may take too long. set 0 for no restrictions.");
+
     try {
         program.parse_args(argc, argv);
     } catch (const std::runtime_error& err) {
@@ -88,8 +100,10 @@ int main(int argc, char* argv[]) {
     int voqPeriod = program.get<int>("--periodvoq");
     float startJitDefault = program.get<float>("--jitdef");
     int forceLinkRate = program.get<int>("--rate");
+    float sizeFactor = program.get<float>("--factor");
     bool printConfig = program.get<bool>("--printconfig");
     bool printDelays = program.get<bool>("--printdelays");
+    uint64_t bpMaxIter = program.get<uint64_t>("--bpmaxit");
 
     tinyxml2::XMLDocument doc;
     auto err = doc.LoadFile(fileIn.c_str());
@@ -102,7 +116,8 @@ int main(int argc, char* argv[]) {
         fprintf(stderr, "error: can't open output file: %s\n", fileOut.c_str());
         return 0;
     }
-    VlinkConfigOwn config = fromXml(doc, scheme, cellSize, voqPeriod, startJitDefault, forceLinkRate);
+    VlinkConfigOwn config = fromXml(doc, scheme, cellSize, voqPeriod,
+            startJitDefault, forceLinkRate, sizeFactor, bpMaxIter);
     if(config == nullptr) {
         fprintf(stderr, "error reading from xml\n");
         fclose(fpOut);
@@ -119,7 +134,18 @@ int main(int argc, char* argv[]) {
     }
     auto bwStats = getStats(bwUsage);
     printf("bwUsage: min=%f, max=%f, mean=%f, var=%f\n",
-            bwStats.min, bwStats.max, bwStats.mean, bwStats.var);
+           bwStats.min, bwStats.max, bwStats.mean, bwStats.var);
+    if(config->scheme == "OqA" || config->scheme == "OqB") {
+        auto bwUsageCells = config->bwUsage(true);
+        if(!bwCorrect(bwUsageCells)) {
+            fprintf(stderr, "error: bandwidth usage in cells is more than 100%%\n");
+            fclose(fpOut);
+            return 0;
+        }
+//        auto bwStatsCells = getStats(bwUsageCells);
+//        printf("cells bwUsage: min=%f, max=%f, mean=%f, var=%f\n",
+//               bwStatsCells.min, bwStatsCells.max, bwStatsCells.mean, bwStatsCells.var);
+    }
     try {
         Error calcErr = config->detectCycles(false);
         if(calcErr) {

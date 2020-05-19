@@ -3,8 +3,6 @@
 #define DELAYTOOL_DELAY_H
 #include "algo.h"
 
-constexpr int64_t maxBpIter = 100000;
-
 // floor(x/y)
 inline int64_t floordiv(int64_t x, int64_t y) {
     return x / y;
@@ -69,7 +67,7 @@ inline std::string OqOverloadVerbose(Port* port) {
            + " of switch "
            + std::to_string(port->prevDevice->id)
            + " because busy period calculation took over "
-           + std::to_string(maxBpIter)
+           + std::to_string(port->device->config->bpMaxIter)
            + " iterations";
 }
 
@@ -233,15 +231,7 @@ Error OqPacket<cells>::calcCommon(Vlink* curVl) {
     if(bp < 0) {
         bp = busyPeriod(inDelays, config, cells);
         if(bp < 0) {
-            std::string verbose =
-                    "overload on output port "
-                    + std::to_string(port->outPrev)
-                    + " of switch "
-                    + std::to_string(port->prevDevice->id)
-                    + " because busy period calculation took over "
-                    + std::to_string(maxBpIter)
-                    + " iterations";
-            return Error(Error::BpDiverge, OqOverloadVerbose(port));
+            return Error(Error::BpTooLong, OqOverloadVerbose(port));
         }
     }
     int64_t delayFuncMax = -1;

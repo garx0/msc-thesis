@@ -34,7 +34,7 @@ std::vector<int> idxRange(int size, bool shuffle);
 
 class Error {
 public:
-    enum ErrorType {Success, Cycle, VoqOverload, BpDiverge};
+    enum ErrorType {Success, Cycle, VoqOverload, BpTooLong};
 
     Error(ErrorType type = Success, const std::string& verbose = "", const std::string& verboseRaw = "")
         : type(type), verbose(verbose), verboseRaw(verboseRaw) {}
@@ -63,8 +63,8 @@ public:
                 return "Cycle";
             case VoqOverload:
                 return "VoqOverload";
-            case BpDiverge:
-                return "BpDiverge";
+            case BpTooLong:
+                return "BpTooLong";
         }
         return "";
     }
@@ -115,6 +115,7 @@ public:
     std::map<int, DeviceOwn> devices;
     std::map<int, int> _portDevice; // get device ID by input/output port ID
     std::map<int, int> links; // port1 id -> id of port2 connected with port1 via link
+    uint64_t bpMaxIter;
     PortDelaysFactoryOwn factory;
 
     Vlink* getVlink(int id) const;
@@ -138,7 +139,7 @@ public:
     Error detectCycles(bool shuffle = false);
 
     // calculate bwUsage() values on all input ports and return them as map by port number
-    std::map<int, double> bwUsage();
+    std::map<int, double> bwUsage(bool cells = false);
 
     // convert from linkByte measure unit to ms
     // (by division by link rate in byte/ms)
@@ -210,7 +211,7 @@ public:
     // usage ratio of the connected link bandwidth by VLs
     // must be in [0,1] if VL config is correct
     // calculated as sum of smax/bag/linkRate by VLs that using this port
-    double bwUsage() const;
+    double bwUsage(bool cells = false) const;
 };
 
 // time is measured in bytes through link = (time in ms) * (link rate in byte/ms) / (1 byte)

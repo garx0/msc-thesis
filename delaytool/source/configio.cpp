@@ -22,19 +22,23 @@ std::vector<int> TokenizeCsv(const std::string& str) {
     return res;
 }
 
+// doc can be modified. it will be used when exporting config to xml with new data
 VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme,
-        int cellSize, int voqPeriod, double jitDefaultValue, int forceLinkRate)
+        int cellSize, int voqPeriod, double jitDefaultValue, int forceLinkRate,
+        double loadFactor, uint64_t bpMaxIter)
 {
     VlinkConfigOwn config = std::make_unique<VlinkConfig>();
     try {
         auto afdxxml = doc.FirstChildElement("afdxxml");
         auto resources = afdxxml->FirstChildElement("resources");
         config->linkRate = forceLinkRate == 0
-                           ? std::stof(resources->FirstChildElement("link")->Attribute("capacity"))
+                           ? static_cast<int64_t>(
+                                   std::stof(resources->FirstChildElement("link")->Attribute("capacity")))
                            : forceLinkRate;
         config->cellSize = cellSize;
         config->voqL = voqPeriod;
         config->scheme = scheme;
+        config->bpMaxIter = bpMaxIter;
 
         for(auto res = resources->FirstChildElement("link");
              res != nullptr;
@@ -42,6 +46,8 @@ VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme,
             if(forceLinkRate == 0 && std::stof(res->Attribute("capacity")) != config->linkRate) {
                 std::cerr << "error: bad input resources - all links must have the same capacity" << std::endl;
                 return nullptr;
+            } else if(forceLinkRate != 0) {
+                res->SetAttribute("capacity", forceLinkRate);
             }
             int port1 = std::stoi(res->Attribute("from"));
             int port2 = std::stoi(res->Attribute("to"));
@@ -49,6 +55,7 @@ VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme,
             config->links[port2] = port1;
         }
 
+        // device id -> vector of IDs of its ports
         std::map<int, std::vector<int>> portNums;
 
         for(auto res = resources->FirstChildElement("endSystem");
@@ -89,8 +96,13 @@ VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme,
             int number = std::stoi(vl->Attribute("number"));
             int srcId = std::stoi(vl->Attribute("source"));
             int bag = std::stoi(vl->Attribute("bag"));
-            int smin = sminDefault; // default
             int smax = std::stoi(vl->Attribute("lmax"));
+            if(loadFactor != 1.0) {
+                smax = static_cast<int>(smax * loadFactor);
+                vl->SetAttribute("lmax", smax);
+            }
+            int smin = std::min(sminDefault, smax);
+            vl->SetAttribute("lmin", smin);
             auto jitStr = vl->Attribute("jitStart"); // in us
             double jit0 = (jitStr ? std::stof(jitStr) : jitDefaultValue) / 1e3; // in ms
             for(auto pathEl = vl->FirstChildElement("path");
