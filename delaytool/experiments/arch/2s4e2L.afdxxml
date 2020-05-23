@@ -1,0 +1,27 @@
+<?xml version="1.0" ?>
+<afdxxml name="test project">
+	<resources>
+		<switch name="switch1" number="1" ports="1,2,3" x="298.5" y="249.5"/>
+		<switch name="switch2" number="2" ports="4,5,6" x="405.5" y="248.5"/>
+		<endSystem name="endSystem1" number="3" ports="7" x="234.5" y="175.5"/>
+		<endSystem name="endSystem2" number="4" ports="8" x="234.5" y="323.5"/>
+		<endSystem name="endSystem3" number="5" ports="9" x="489.5" y="158.5"/>
+		<endSystem name="endSystem4" number="6" ports="10" x="500.5" y="322.5"/>
+		<partition connectedTo="3" name="partition1" number="7" x="224.5" y="105.5"/>
+		<partition connectedTo="3" name="partition2" number="8" x="158.5" y="174.5"/>
+		<partition connectedTo="4" name="partition3" number="9" x="162.5" y="319.5"/>
+		<partition connectedTo="4" name="partition4" number="10" x="233.5" y="409.5"/>
+		<partition connectedTo="5" name="partition5" number="11" x="481.5" y="82.5"/>
+		<partition connectedTo="5" name="partition6" number="12" x="570.5" y="153.5"/>
+		<partition connectedTo="6" name="partition7" number="13" x="580.5" y="313.5"/>
+		<partition connectedTo="6" name="partition8" number="14" x="504.5" y="400.5"/>
+		<link capacity="25000" from="1" fromType="0" to="4" toType="0" multi="2"/>
+		<link capacity="12500" from="7" fromType="0" to="2" toType="0"/>
+		<link capacity="12500" from="8" fromType="0" to="3" toType="0"/>
+		<link capacity="12500" from="9" fromType="0" to="5" toType="0"/>
+		<link capacity="12500" from="10" fromType="0" to="6" toType="0"/>
+	</resources>
+	<virtualLinks/>
+	<dataFlows>
+	</dataFlows>
+</afdxxml>

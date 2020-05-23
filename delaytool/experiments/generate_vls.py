@@ -34,14 +34,31 @@ f"usage: python {argv[0]} arch output_dir n_tests n_msgs msg_size_min msg_size_m
 
         x_ext = ".exe" if sys.platform.startswith("win") else ""
         designer_path = "AFDX_Designer/algo/AFDX_DESIGN" + x_ext
-        delaytool_path = "../cmake-build-debug/delaytool" + x_ext
-        deletepaths_path = "../cmake-build-debug/deletepaths" + x_ext
+        delaytool_path = "../build/delaytool" + x_ext
+        deletepaths_path = "../build/deletepaths" + x_ext
+
+        if not os.path.isfile(designer_path):
+            print(f"{designer_path} is not found, find and build AFDX Designer first")
+            return
+        
+        if not os.path.isfile(delaytool_path):
+            print(f"{delaytool_path} is not found, build delaytool first by running build.sh from its directory")
+            return
+
+        if not os.path.isfile(deletepaths_path):
+            print(f"{deletepaths_path} is not found, build delaytool first by running build.sh from its directory")
+            return
 
         filename_vls = f"{dir_name}/{arch_name}_vls_{i}.afdxxml"
+        if os.path.isfile(filename_vls):
+            os.remove(filename_vls)
+            assert(not os.path.isfile(filename_vls))
         command = f"{designer_path} {filename_flows} {filename_vls} a --limit-jitter=f"
         print(command)
         process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
         process.communicate()
+        if not os.path.isfile(filename_vls):
+            raise Exception("failed designing VL configuration")
 
         filename_xml = f"{dir_name}/{arch_name}_vls_{i}.xml"
         new_seed = random.randint(0, 1000000)
