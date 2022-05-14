@@ -3,6 +3,7 @@
 #include <vector>
 #include <cmath>
 #include <random>
+#include <algorithm>
 #include "algo.h"
 #include "delay.h"
 
@@ -53,6 +54,39 @@ std::vector<Port*> Device::getAllPorts() const {
     res.reserve(ports.size());
     for(const auto& pair: ports) {
         res.push_back(pair.second.get());
+    }
+    return res;
+}
+
+std::vector<int> Device::getAllPortIds() const {
+    std::vector<int> res;
+    res.reserve(ports.size());
+    for(const auto& pair: ports) {
+        res.push_back(pair.second->id);
+    }
+    std::sort(res.begin(), res.end());
+    return res;
+}
+
+bool Device::hasVlinks(int in_port_id, int out_port_id) const {
+    auto in_port = getPort(in_port_id);
+    auto out_port_in = fromOutPort(out_port_id);
+    for(auto vnode: in_port->getAllVnodes()) {
+        if(vnode->selectNext(out_port_in->id) != nullptr) {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::vector<Vnode*> Device::getVlinks(int in_port_id, int out_port_id) const {
+    auto in_port = getPort(in_port_id);
+    auto out_port_in = fromOutPort(out_port_id);
+    std::vector<Vnode*> res;
+    for(auto vnode: in_port->getAllVnodes()) {
+        if(vnode->selectNext(out_port_in->id) != nullptr) {
+            res.push_back(vnode);
+        }
     }
     return res;
 }
@@ -265,18 +299,18 @@ Error VlinkConfig::calcE2e(bool print) {
             }
         }
     }
-    if(scheme == "voqa" || scheme == "voqb") {
-        for(auto device: getAllDevices()) {
-            // check sums by switch input ports
-            if(device->type != Device::Switch) {
-                continue;
-            }
-            Error err = completeCheckVoq(device);
-            if(err) {
-                return err;
-            }
-        }
-    }
+//    if(scheme == "voqa" || scheme == "voqb") {
+//        for(auto device: getAllDevices()) {
+//            // check sums by switch input ports
+//            if(device->type != Device::Switch) {
+//                continue;
+//            }
+//            Error err = completeCheckVoq(device);
+//            if(err) {
+//                return err;
+//            }
+//        }
+//    }
     return Error::Success;
 }
 
@@ -340,7 +374,7 @@ std::vector<Device*> VlinkConfig::getAllDevices() const {
     return res;
 }
 
-VlinkConfig::VlinkConfig(): factory(std::make_unique<PortDelaysFactory>()) {}
+VlinkConfig::VlinkConfig(): factory(std::make_unique<GroupDelaysFactory>()) {}
 
 std::map<int, double> VlinkConfig::bwUsage(bool cells) {
     std::map<int, double> res;
@@ -352,20 +386,20 @@ std::map<int, double> VlinkConfig::bwUsage(bool cells) {
     return res;
 }
 
-void PortDelays::setInDelays(const std::map<int, DelayData> &values) {
+void GroupDelays::setInDelays(const std::map<int, DelayData> &values) {
     inDelays = values;
     _inputReady = true;
 }
 
-void PortDelays::setInDelay(DelayData delay) {
+void GroupDelays::setInDelay(DelayData delay) {
     inDelays[delay.vl()->id] = delay;
 }
 
-void PortDelays::setDelay(DelayData delay) {
+void GroupDelays::setDelay(DelayData delay) {
     delays[delay.vl()->id] = delay;
 }
 
-int64_t PortDelays::trMax(Vlink* vl) const {
+int64_t GroupDelays::trMax(Vlink* vl) const {
     switch(cellType) {
         case P: return vl->smax;
         case A: return vl->smax + vl->config->cellSize * (vl->smax % vl->config->cellSize != 0)
@@ -375,7 +409,7 @@ int64_t PortDelays::trMax(Vlink* vl) const {
     }
 }
 
-int64_t PortDelays::trMin(Vlink* vl) const {
+int64_t GroupDelays::trMin(Vlink* vl) const {
     switch(cellType) {
         case P: return vl->smin;
         case A: return vl->smin;
@@ -384,7 +418,7 @@ int64_t PortDelays::trMin(Vlink* vl) const {
     }
 }
 
-Error PortDelays::calc(Vlink* vl, bool first) {
+Error GroupDelays::calc(Vlink* vl, bool first) {
     if(delays[vl->id].ready()) {
         return Error::Success;
     }
@@ -397,7 +431,7 @@ Error PortDelays::calc(Vlink* vl, bool first) {
     }
 }
 
-DelayData PortDelays::e2e(int vlId) const {
+DelayData GroupDelays::e2e(int vlId) const {
     auto delay = getDelay(vlId);
     auto vl = delay.vl();
     assert(delay.ready());
@@ -408,29 +442,29 @@ DelayData PortDelays::e2e(int vlId) const {
     return DelayData(vl, dmin, dmax - dmin);
 }
 
-DelayData PortDelays::getFromMap(int vl, const std::map<int, DelayData> &delaysMap) {
+DelayData GroupDelays::getFromMap(int vl, const std::map<int, DelayData> &delaysMap) {
     auto found = delaysMap.find(vl);
     assert(found != delaysMap.end());
     return found->second;
 }
 
-// register Creators for all PortDelays types
-void PortDelaysFactory::RegisterAll() {
+// register Creators for all GroupDelays types
+void GroupDelaysFactory::RegisterAll() {
     AddCreator<Mock>("Mock");
-    AddCreator<VoqA>("VoqA");
-    AddCreator<VoqB>("VoqB");
+//    AddCreator<VoqA>("VoqA");
+//    AddCreator<VoqB>("VoqB");
     AddCreator<OqPacket<>>("OqPacket");
     AddCreator<OqA>("OqA");
     AddCreator<OqB>("OqB");
     AddCreator<OqCellB>("OqCellB"); // DEBUG
 }
 
-PortDelaysOwn PortDelaysFactory::Create(const std::string& name, Port* port) {
+GroupDelaysOwn GroupDelaysFactory::Create(const std::string& name, Port* port) {
     auto found = creators.find(name);
     if(found != creators.end()) {
         return found->second->Create(port);
     } else {
-        throw std::logic_error("invalid PortDelays schemeName");
+        throw std::logic_error("invalid GroupDelays schemeName");
     }
 }
 
@@ -446,4 +480,152 @@ void defaultIntMap::Inc(int key, int val) {
     } else {
         (*this)[key] += val;
     }
+}
+
+int CioqMap::getQueueId(int in_port_id, int out_port_id) const {
+    auto found = queueTable.find(in_port_id);
+    assert(found != queueTable.end());
+    auto found2 = found->second.find(out_port_id);
+    assert(found2 != found->second.end());
+    return found2->second;
+}
+
+int CioqMap::getFabricId(int in_port_id, int queue_id) const {
+    auto found = fabricTable.find(std::pair(in_port_id, queue_id));
+    assert(found != fabricTable.end());
+    return found->second;
+}
+
+int CioqMap::getFabricIdByEdge(int in_port_id, int out_port_id) const {
+    return getFabricId(in_port_id, getQueueId(in_port_id, out_port_id));
+}
+
+void CioqMap::setMap(std::map<int, std::map<int, int>> _queueTable, std::map<std::pair<int, int>, int> _fabricTable) {
+    queueTable = _queueTable;
+    fabricTable = _fabricTable;
+
+    // build all comps (components of fabric-induced subgraphs of the switch traffic graph)
+    auto device_port_ids = device->getAllPortIds();
+    for(auto in_id: device_port_ids) {
+        for(int queue_id = 0; queue_id < n_queues; queue_id++) {
+            // find any output port from this input queue
+            int out_id = -1;
+            for(auto cur_out_id: device_port_ids) {
+                if (getQueueId(in_id, cur_out_id) == queue_id) {
+                    out_id = cur_out_id;
+                    break;
+                }
+            }
+            auto found = compsIndex.find(std::pair(in_id, out_id));
+            if(found != compsIndex.end()) continue;
+            auto comp_edges = buildComp(in_id, queue_id);
+            if(comp_edges.empty()) continue;
+            comps.push_back(std::make_unique<PortsSubgraph>(comp_edges));
+            PortsSubgraph* comp = comps[comps.size()-1].get();
+            for(auto edge: comp_edges) {
+                assert(compsIndex.find(edge) == compsIndex.end());
+                compsIndex[edge] = comp;
+            }
+        }
+    }
+
+    // DEBUG assertions about compsIndex
+    for(auto in_id: device_port_ids) {
+        for(auto out_id: device_port_ids) {
+            if(compsIndex.find(std::pair(in_id, out_id)) == compsIndex.end()) {
+                assert(!device->hasVlinks(in_id, out_id));
+                auto comp_edges = buildComp(in_id, getQueueId(in_id, out_id));
+                assert(comp_edges.empty());
+            }
+        }
+    }
+}
+
+std::set<std::pair<int, int>> CioqMap::buildComp(int in_port_id, int queue_id) const {
+    std::map<int, bool> in_port_ids_seen;
+    std::map<int, bool> out_port_ids_seen;
+    std::set<std::pair<int, int>> edges;
+    int fabric_id = getFabricId(in_port_id, queue_id);
+    auto device_port_ids = device->getAllPortIds();
+
+    in_port_ids_seen[in_port_id] = false;
+    bool has_unseen = true;
+    while(has_unseen) {
+        has_unseen = false;
+
+        for(auto& it: in_port_ids_seen) {
+            auto[in_id, in_seen] = it;
+            if(in_seen) continue;
+            for(auto out_id: device_port_ids) {
+                if(device->hasVlinks(in_id, out_id) && getFabricIdByEdge(in_id, out_id) == fabric_id) {
+                    edges.insert(std::pair(in_id, out_id));
+                    auto found = out_port_ids_seen.find(out_id);
+                    if(found == out_port_ids_seen.end()) {
+                        out_port_ids_seen[out_id] = false;
+                        has_unseen = true;
+                    }
+                }
+            }
+            it.second = true;
+        }
+
+        for(auto& it: out_port_ids_seen) {
+            auto[out_id, out_seen] = it;
+            if(out_seen) continue;
+            for(auto in_id: device_port_ids) {
+                if(device->hasVlinks(in_id, out_id) && getFabricIdByEdge(in_id, out_id) == fabric_id) {
+                    edges.insert(std::pair(in_id, out_id));
+                    auto found = in_port_ids_seen.find(in_id);
+                    if(found == in_port_ids_seen.end()) {
+                        in_port_ids_seen[in_id] = false;
+                        has_unseen = true;
+                    }
+                }
+            }
+            it.second = true;
+        }
+    }
+    for(auto[id, seen]: in_port_ids_seen) {
+        assert(seen); // DEBUG
+    }
+    for(auto[id, seen]: out_port_ids_seen) {
+        assert(seen); // DEBUG
+    }
+    return edges;
+}
+
+void generateTableBasic(Device* device, int n_queues, int n_fabrics) {
+    assert(n_fabrics % n_queues == 0);
+    int in_port_group_size = n_fabrics / n_queues;
+
+    auto in_ports_ids = device->getAllPortIds();
+    int n_ports = in_ports_ids.size();
+    int out_port_group_size = ceildiv(n_ports, n_queues);
+
+    std::map<int, std::map<int, int>> queueTable;
+    std::map<std::pair<int, int>, int> fabricTable;
+
+    for(int i = 0; i < n_ports; i++) {
+        int in_port_id = in_ports_ids[i];
+        // out port -> queue id
+        std::map<int, int> portQueueTable;
+        for(int queueId = 0; queueId < n_queues; queueId++) {
+            int fabricId = (i / in_port_group_size) * n_queues + queueId;
+            assert(fabricId < n_fabrics);
+            fabricTable[std::pair(in_port_id, queueId)] = fabricId;
+        }
+        for(int j = 0; j < n_ports; j++) {
+            int out_port_id = in_ports_ids[j];
+            int queueId = j / out_port_group_size;
+            assert(queueId < n_queues);
+            portQueueTable[out_port_id] = queueId;
+        }
+        queueTable[in_port_id] = portQueueTable;
+    }
+    device->cioqMap->setMap(queueTable, fabricTable);
+}
+
+bool PortsSubgraph::isConnected(int node_in, int node_out) const {
+    auto found = edges.find(std::pair(node_in, node_out));
+    return (found != edges.end());
 }

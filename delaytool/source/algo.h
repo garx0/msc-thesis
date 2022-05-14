@@ -14,18 +14,22 @@
 class Vlink;
 class Vnode;
 class Device;
-class PortDelays;
-class PortDelaysFactory;
+class GroupDelays;
+class GroupDelaysFactory;
 class Port;
 class VlinkConfig;
+class CioqMap;
+class PortsSubgraph;
 
 using VlinkOwn = std::unique_ptr<Vlink>;
 using VnodeOwn = std::unique_ptr<Vnode>;
 using DeviceOwn = std::unique_ptr<Device>;
-using PortDelaysOwn = std::unique_ptr<PortDelays>;
+using GroupDelaysOwn = std::unique_ptr<GroupDelays>;
 using PortOwn = std::unique_ptr<Port>;
 using VlinkConfigOwn = std::unique_ptr<VlinkConfig>;
-using PortDelaysFactoryOwn = std::unique_ptr<PortDelaysFactory>;
+using PortDelaysFactoryOwn = std::unique_ptr<GroupDelaysFactory>;
+using CioqMapOwn = std::unique_ptr<CioqMap>;
+using PortsSubgraphOwn = std::unique_ptr<PortsSubgraph>;
 
 // returns shuffled {0, ..., size - 1} vector if shuffle=true, not shuffled otherwise
 // uses C random tools
@@ -170,7 +174,7 @@ public:
     enum Type {Switch, End};
 
     Device(VlinkConfig* config, Type type, int id)
-        : config(config), id(id), type(type) {}
+        : config(config), id(id), type(type), cioqMap(std::make_unique<CioqMap>(this)) {}
 
     // called when config->_portDevices is complete
     void AddPorts(const std::vector<int>& portIds);
@@ -180,14 +184,23 @@ public:
     const Type type;
 
     std::map<int, PortOwn> ports; // input ports
+    std::map<int, Port*> outPorts; // input ports connected to this device's output ports
     std::vector<Vlink*> sourceFor; // Vlinks which have this device as source
+
+    CioqMapOwn cioqMap;
 
     Port* getPort(int portId) const;
 
     std::vector<Port*> getAllPorts() const;
 
+    std::vector<int> getAllPortIds() const;
+
     // get input port connected with output port portId
     Port* fromOutPort(int portId) const;
+
+    bool hasVlinks(int in_port_id, int out_port_id) const;
+
+    std::vector<Vnode*> getVlinks(int in_port_id, int out_port_id) const;
 };
 
 // INPUT PORT
@@ -200,7 +213,7 @@ public:
     Device* const device;
     Device* prevDevice;
     std::map<int, Vnode*> vnodes; // get Vnode by Vlink id
-    PortDelaysOwn delays; // delays until queuing in switch which contains this input port
+    GroupDelaysOwn delays; // delays until queuing in switch which contains this input port
 
     Port(Device* device, int number);
 
@@ -239,17 +252,18 @@ private:
     bool _ready;
 };
 
-class PortDelays
+class GroupDelays
 {
 public:
     enum celltype_t {P, A, B};
 
-    explicit PortDelays(Port* port, const std::string& schemeName, celltype_t cellType)
-    : config(port->device->config), port(port), schemeName(schemeName),
+    explicit GroupDelays(Device* device, const std::string& schemeName, celltype_t cellType)
+    : config(device->config), device(device), schemeName(schemeName),
       cellType(cellType), _inputReady(false) {}
 
     VlinkConfig* const config;
-    Port* const port;
+//    Port* const port;
+    Device* const device;
     std::string schemeName;
     celltype_t const cellType;
 
@@ -323,7 +337,8 @@ public:
     // random order of data dependency graph traversal if shuffle=true
     Error prepareTest(bool shuffle = false);
 
-    Vnode* selectNext(int deviceId) const;
+    // portId is id of an input port in another device
+    Vnode* selectNext(int portId) const;
 
     // get ids of all devices which are leafs of this node's subtree
     std::vector<const Vnode*> getAllDests() const;
@@ -336,50 +351,99 @@ private:
     void _getAllDests(std::vector<const Vnode*>& vec) const;
 };
 
-Error completeCheckVoq(Device *device);
+//Error completeCheckVoq(Device *device);
 
-class PortDelaysFactory {
+class GroupDelaysFactory {
 public:
 
-    PortDelaysFactory() { RegisterAll(); }
+    GroupDelaysFactory() { RegisterAll(); }
 
-    // register Creators for all PortDelays types
+    // register Creators for all GroupDelays types
     void RegisterAll();
 
     // interface for TCreator
-    // is to unite TCreator objects creating different PortDelays under one schemeName
+    // is to unite TCreator objects creating different GroupDelays under one schemeName
     class ICreator {
     public:
         ICreator() = default;
         virtual ~ICreator() = default;
-        virtual PortDelaysOwn Create(Port*) const = 0;
+        virtual GroupDelaysOwn Create(Port*) const = 0;
     };
 
-    // class that create TPortDelays objects with its constructor arguments
-    template<typename TPortDelays>
+    // class that create TGroupDelays objects with its constructor arguments
+    template<typename TGroupDelays>
     class TCreator : public ICreator {
     public:
-        PortDelaysOwn Create(Port* port) const override {
-            if constexpr(std::is_constructible_v<TPortDelays, decltype(port)>) {
-                return std::make_unique<TPortDelays>(port);
+        GroupDelaysOwn Create(Port* port) const override {
+            if constexpr(std::is_constructible_v<TGroupDelays, decltype(port)>) {
+                return std::make_unique<TGroupDelays>(port);
             } else {
-                throw std::logic_error("can't make PortDelays with these argument types");
+                throw std::logic_error("can't make GroupDelays with these argument types");
             }
         }
     };
 
-    // register TCreator<TPortDelays> at specified name
-    template<typename TPortDelays>
+    // register TCreator<TGroupDelays> at specified name
+    template<typename TGroupDelays>
     void AddCreator(const std::string& name) {
-        creators[name] = std::make_shared<PortDelaysFactory::TCreator<TPortDelays>>();
+        creators[name] = std::make_shared<GroupDelaysFactory::TCreator<TGroupDelays>>();
     }
 
     // calls corresponding Create method of Creator registered at specified name
-    PortDelaysOwn Create(const std::string& name, Port*);
+    GroupDelaysOwn Create(const std::string& name, Port*);
 
 private:
     using TCreatorPtr = std::shared_ptr<ICreator>;
     std::map<std::string, TCreatorPtr> creators;
+};
+
+class CioqMap
+{
+public:
+    CioqMap(Device* device, int n_queues = 2, int n_fabrics = 8)
+            : config(device->config), device(device), n_queues(n_queues), n_fabrics(n_fabrics) {}
+
+    VlinkConfig* const config;
+    Device* const device;
+    int n_queues;
+    int n_fabrics;
+
+    // input port id -> output port id -> queue id
+    // queue id = 0, 1, identifying it between queues of an input port
+    std::map<int, std::map<int, int>> queueTable;
+
+    // <input port id, queue id> -> fabric id
+    std::map<std::pair<int, int>, int> fabricTable;
+
+    std::vector<PortsSubgraphOwn> comps;
+
+    // in_port_id, out_port_id -> PortsSubgraph
+    std::map<std::pair<int, int>, PortsSubgraph*> compsIndex;
+
+    void setMap(std::map<int, std::map<int, int>> _queueTable, std::map<std::pair<int, int>, int> _fabricTable);
+
+    int getQueueId(int in_port_id, int out_port_id) const;
+
+    int getFabricId(int in_port_id, int queue_id) const;
+
+    int getFabricIdByEdge(int in_port_id, int out_port_id) const;
+
+    std::set<std::pair<int, int>> buildComp(int in_port_id, int queue_id) const;
+};
+
+void generateTableBasic(Device* device, int n_queues = 2, int n_fabrics = 8);
+
+// bipartite graph
+class PortsSubgraph
+{
+public:
+    PortsSubgraph() {}
+
+    PortsSubgraph(std::set<std::pair<int, int>> edges): edges(edges) {}
+
+    std::set<std::pair<int, int>> edges;
+
+    bool isConnected(int node_in, int node_out) const;
 };
 
 #endif //DELAYTOOL_ALGO_H

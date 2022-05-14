@@ -83,7 +83,7 @@ VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme,
             config->devices[number] = std::make_unique<Device>(config.get(), Device::Switch, number);
             portNums[number] = ports;
         }
-        // add ports
+        // create Port objects in devices
         for(auto[num, ports] : portNums) {
             config->getDevice(num)->AddPorts(ports);
         }

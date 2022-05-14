@@ -25,124 +25,124 @@ Error Mock::calcCommon(Vlink* vl) {
     return Error::Success;
 }
 
-Error completeCheckVoq(Device *sw) {
-    // columns of Cij matrix are located at different PortDelays objects in next switches
-    std::set<int> visited; // visited output ports
-    defaultIntMap inPortLoad; // (sum of Cpq by q) by p in device->ports
-    for(auto port: sw->getAllPorts()) {
-        for(auto vnode: port->getAllVnodes()) {
-            for(const auto& own: vnode->next) {
-                Vnode* nxt = own.get();
-                if(visited.find(nxt->outPrev) != visited.end()) {
-                    // to avoid multiple dynamic casts of the same object ptr
-                    continue;
-                }
-                visited.insert(nxt->outPrev);
-                auto outPortDelays = dynamic_cast<Voq*>(nxt->in->delays.get());
-                for(auto port2: sw->getAllPorts()) {
-                    // the result will be same if we remove 'visited' variable,
-                    // remove header of this cycle and change port2 to port in its body
-                    inPortLoad.Inc(port2->id, outPortDelays->outPrevLoad.Get(port2->id));
-                }
-            }
-        }
-    }
-    for(auto [portId, load]: inPortLoad) {
-        if(load > sw->config->voqL) {
-            std::string verbose =
-                    "overload on input port "
-                    + std::to_string(portId)
-                    + " of switch "
-                    + std::to_string(sw->id);
-            return Error(Error::VoqOverload, VoqOverloadVerbose(portId, sw->id, "input"));
-        }
-    }
-    return Error::Success;
-}
+//Error completeCheckVoq(Device *sw) {
+//    // columns of Cij matrix are located at different GroupDelays objects in next switches
+//    std::set<int> visited; // visited output ports
+//    defaultIntMap inPortLoad; // (sum of Cpq by q) by p in device->ports
+//    for(auto port: sw->getAllPorts()) {
+//        for(auto vnode: port->getAllVnodes()) {
+//            for(const auto& own: vnode->next) {
+//                Vnode* nxt = own.get();
+//                if(visited.find(nxt->outPrev) != visited.end()) {
+//                    // to avoid multiple dynamic casts of the same object ptr
+//                    continue;
+//                }
+//                visited.insert(nxt->outPrev);
+//                auto outPortDelays = dynamic_cast<Voq*>(nxt->in->delays.get());
+//                for(auto port2: sw->getAllPorts()) {
+//                    // the result will be same if we remove 'visited' variable,
+//                    // remove header of this cycle and change port2 to port in its body
+//                    inPortLoad.Inc(port2->id, outPortDelays->outPrevLoad.Get(port2->id));
+//                }
+//            }
+//        }
+//    }
+//    for(auto [portId, load]: inPortLoad) {
+//        if(load > sw->config->voqL) {
+//            std::string verbose =
+//                    "overload on input port "
+//                    + std::to_string(portId)
+//                    + " of switch "
+//                    + std::to_string(sw->id);
+//            return Error(Error::VoqOverload, VoqOverloadVerbose(portId, sw->id, "input"));
+//        }
+//    }
+//    return Error::Success;
+//}
 
-void Voq::calcOutPrevLoad() {
-    if(loadReady) {
-        return;
-    }
-    calcVlinkLoad();
-    Device* prevSwitch = nullptr;
-    for(auto [vlId, load]: vlinkLoad) {
-        prevSwitch = port->vnodes[vlId]->prev->device;
-        assert(prevSwitch->type == Device::Switch);
-        break;
-    }
-    for(auto [vlId, load]: vlinkLoad) {
-        Vnode *prevNode = port->vnodes[vlId]->prev;
-        assert(prevNode->device->id == prevSwitch->id);
-        outPrevLoad.Inc(prevNode->in->id, load);
-        outPrevLoadSum += load;
-    }
-    loadReady = true;
-}
+//void Voq::calcOutPrevLoad() {
+//    if(loadReady) {
+//        return;
+//    }
+//    calcVlinkLoad();
+//    Device* prevSwitch = nullptr;
+//    for(auto [vlId, load]: vlinkLoad) {
+//        prevSwitch = port->vnodes[vlId]->prev->device;
+//        assert(prevSwitch->type == Device::Switch);
+//        break;
+//    }
+//    for(auto [vlId, load]: vlinkLoad) {
+//        Vnode *prevNode = port->vnodes[vlId]->prev;
+//        assert(prevNode->device->id == prevSwitch->id);
+//        outPrevLoad.Inc(prevNode->in->id, load);
+//        outPrevLoadSum += load;
+//    }
+//    loadReady = true;
+//}
 
-void VoqA::calcVlinkLoad() {
-    for(auto [vlId, delay]: inDelays) {
-        assert(delay.ready());
-        auto vl = delay.vl();
-        int load = numPackets(config->voqL * config->cellSize, vl->bagB, delay.jit())
-                * ceildiv(vl->smax, config->cellSize);
-        vlinkLoad.Inc(vlId, load);
-    }
-}
-
-Error VoqA::calcCommon(Vlink* vl) {
-    calcOutPrevLoad();
-    if(outPrevLoadSum > config->voqL) {
-        printf("%d > %d = L\n", outPrevLoadSum, config->voqL); // DEBUG
-        return Error(Error::VoqOverload,
-                VoqOverloadVerbose(port->outPrev, port->prevDevice->id, "output"));
-    }
-    int64_t localMaxDelay = (config->voqL * 2 + 1 + outPrevLoadSum - vlinkLoad.Get(vl->id)) * config->cellSize
-                         + sizeRound(vl->smax, config->cellSize);
-    int64_t localMinDelay = sizeRound(vl->smin, config->cellSize) + config->cellSize + vl->smin;
-    assert(localMaxDelay >= localMinDelay);
-    auto inDelay = getInDelay(vl->id);
-    setDelay(DelayData(
-            vl, inDelay.dmin() + localMinDelay,
-            inDelay.jit() + localMaxDelay - localMinDelay));
-    return Error::Success;
-}
-
-void VoqB::calcVlinkLoad() {
-    for(auto [vlId, delay]: inDelays) {
-        assert(delay.ready());
-        auto vl = delay.vl();
-        int load = numCells(config->voqL * config->cellSize, vl->bagB, delay.jit(),
-                ceildiv(vl->smax, config->cellSize), config->cellSize);
-        vlinkLoad.Inc(vlId, load);
-    }
-}
-
-Error VoqB::calcCommon(Vlink* vl) {
-    calcOutPrevLoad();
-    if(outPrevLoadSum > config->voqL) {
-        printf("%d > %d = L\n", outPrevLoadSum, config->voqL); // DEBUG
-        return Error(Error::VoqOverload,
-                VoqOverloadVerbose(port->outPrev, port->prevDevice->id, "output"));
-    }
-    int curSizeRoundMin = sizeRound(vl->smin, config->cellSize);
-    int64_t localMinDelay = std::min(config->voqL * config->cellSize, curSizeRoundMin)
-            + curSizeRoundMin +
-            + std::min(config->cellSize, vl->smin);
-    int64_t localMaxDelay;
-    int64_t nCells = ceildiv(vl->smax, config->cellSize);
-    if(nCells < config->voqL) {
-        localMaxDelay = (config->voqL + outPrevLoadSum + 1) * 2 * config->cellSize;
-    } else {
-        localMaxDelay = (nCells + config->voqL * 2 + 1) * config->cellSize;
-    }
-    assert(localMaxDelay >= localMinDelay);
-    auto inDelay = getInDelay(vl->id);
-    setDelay(DelayData(
-            vl, inDelay.dmin() + localMinDelay,
-            inDelay.jit() + localMaxDelay - localMinDelay));
-    return Error::Success;
-}
+//void VoqA::calcVlinkLoad() {
+//    for(auto [vlId, delay]: inDelays) {
+//        assert(delay.ready());
+//        auto vl = delay.vl();
+//        int load = numPackets(config->voqL * config->cellSize, vl->bagB, delay.jit())
+//                * ceildiv(vl->smax, config->cellSize);
+//        vlinkLoad.Inc(vlId, load);
+//    }
+//}
+//
+//Error VoqA::calcCommon(Vlink* vl) {
+//    calcOutPrevLoad();
+//    if(outPrevLoadSum > config->voqL) {
+//        printf("%d > %d = L\n", outPrevLoadSum, config->voqL); // DEBUG
+//        return Error(Error::VoqOverload,
+//                VoqOverloadVerbose(port->outPrev, port->prevDevice->id, "output"));
+//    }
+//    int64_t localMaxDelay = (config->voqL * 2 + 1 + outPrevLoadSum - vlinkLoad.Get(vl->id)) * config->cellSize
+//                         + sizeRound(vl->smax, config->cellSize);
+//    int64_t localMinDelay = sizeRound(vl->smin, config->cellSize) + config->cellSize + vl->smin;
+//    assert(localMaxDelay >= localMinDelay);
+//    auto inDelay = getInDelay(vl->id);
+//    setDelay(DelayData(
+//            vl, inDelay.dmin() + localMinDelay,
+//            inDelay.jit() + localMaxDelay - localMinDelay));
+//    return Error::Success;
+//}
+//
+//void VoqB::calcVlinkLoad() {
+//    for(auto [vlId, delay]: inDelays) {
+//        assert(delay.ready());
+//        auto vl = delay.vl();
+//        int load = numCells(config->voqL * config->cellSize, vl->bagB, delay.jit(),
+//                ceildiv(vl->smax, config->cellSize), config->cellSize);
+//        vlinkLoad.Inc(vlId, load);
+//    }
+//}
+//
+//Error VoqB::calcCommon(Vlink* vl) {
+//    calcOutPrevLoad();
+//    if(outPrevLoadSum > config->voqL) {
+//        printf("%d > %d = L\n", outPrevLoadSum, config->voqL); // DEBUG
+//        return Error(Error::VoqOverload,
+//                VoqOverloadVerbose(port->outPrev, port->prevDevice->id, "output"));
+//    }
+//    int curSizeRoundMin = sizeRound(vl->smin, config->cellSize);
+//    int64_t localMinDelay = std::min(config->voqL * config->cellSize, curSizeRoundMin)
+//            + curSizeRoundMin +
+//            + std::min(config->cellSize, vl->smin);
+//    int64_t localMaxDelay;
+//    int64_t nCells = ceildiv(vl->smax, config->cellSize);
+//    if(nCells < config->voqL) {
+//        localMaxDelay = (config->voqL + outPrevLoadSum + 1) * 2 * config->cellSize;
+//    } else {
+//        localMaxDelay = (nCells + config->voqL * 2 + 1) * config->cellSize;
+//    }
+//    assert(localMaxDelay >= localMinDelay);
+//    auto inDelay = getInDelay(vl->id);
+//    setDelay(DelayData(
+//            vl, inDelay.dmin() + localMinDelay,
+//            inDelay.jit() + localMaxDelay - localMinDelay));
+//    return Error::Success;
+//}
 
 // == Rk,j(t) - Jk, k == curVlId
 int64_t OqCellB::delayFunc(int64_t t, Vlink* curVl) const {
@@ -178,7 +178,7 @@ Error OqCellB::calcCommon(Vlink* curVl) {
     if(bp < 0) {
         bp = busyPeriod(inDelays, config, true);
         if(bp < 0) {
-            return Error(Error::BpTooLong, OqOverloadVerbose(port));
+            return Error(Error::BpTooLong, OqOverloadVerbose(curVl, device));
         }
     }
     int64_t curSizeRound = sizeRound(curVl->smax, config->cellSize);

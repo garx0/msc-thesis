@@ -52,31 +52,41 @@ inline int64_t numCellsUp(int64_t intvl, int64_t bag, int64_t jit, int64_t nCell
                       ceildiv_up((intvl + jit) % bag - jit * ((intvl + jit) / bag == 0), cellSize));
 }
 
-inline std::string VoqOverloadVerbose(int portId, int switchId, const std::string& portType) {
-    return std::string("overload on ")
-           + portType
-           + " port "
-           + std::to_string(portId)
-           + " of switch "
-           + std::to_string(switchId);
-}
+//inline std::string VoqOverloadVerbose(int portId, int switchId, const std::string& portType) {
+//    return std::string("overload on ")
+//           + portType
+//           + " port "
+//           + std::to_string(portId)
+//           + " of switch "
+//           + std::to_string(switchId);
+//}
 
-inline std::string OqOverloadVerbose(Port* port) {
-    return std::string("overload on output port ")
-           + std::to_string(port->outPrev)
+//inline std::string OqOverloadVerbose(Port* port) {
+//    return std::string("overload on output port ")
+//           + std::to_string(port->outPrev)
+//           + " of switch "
+//           + std::to_string(port->prevDevice->id)
+//           + " because busy period calculation took over "
+//           + std::to_string(port->device->config->bpMaxIter)
+//           + " iterations";
+//}
+
+inline std::string OqOverloadVerbose(Vlink* vl, Device* device) {
+    return std::string("overload for vl ")
+           + std::to_string(vl->id)
            + " of switch "
-           + std::to_string(port->prevDevice->id)
+           + std::to_string(device->id)
            + " because busy period calculation took over "
-           + std::to_string(port->device->config->bpMaxIter)
+           + std::to_string(device->config->bpMaxIter)
            + " iterations";
 }
 
 int64_t busyPeriod(const std::map<int, DelayData>& inDelays, VlinkConfig* config, bool byTick = false);
 
-class Mock : public PortDelays
+class Mock : public GroupDelays
 {
 public:
-    Mock(Port* port): PortDelays(port, "Mock", P) {}
+    Mock(Device* device): GroupDelays(device, "Mock", P) {}
 
     Error calcCommon(Vlink* vl) override;
 };
@@ -90,57 +100,57 @@ public:
     void Inc(int key, int val);
 };
 
-// base class for VoqA and VoqB
-class Voq : public PortDelays
-{
-public:
-    Voq(Port* port, const std::string& schemeName, celltype_t cellType)
-        : PortDelays(port, schemeName, cellType), outPrevLoadSum(0), loadReady(false) {}
-
-    // C_l values by l on prev switch
-    defaultIntMap vlinkLoad;
-
-    // C_pj values by p on prev switch, where j ~ this->port->outPrev
-    defaultIntMap outPrevLoad;
-
-    // sum of outPrevLoad values
-    int outPrevLoadSum;
-
-    // is information about input load (outPrevLoad and its sum) ready
-    bool loadReady;
-
-    void calcOutPrevLoad();
-
-    virtual void calcVlinkLoad() = 0;
-};
-
-class VoqA : public Voq
-{
-public:
-    explicit VoqA(Port* port): Voq(port, "VoqA", A) {}
-
-    void calcVlinkLoad() override;
-
-    Error calcCommon(Vlink* vl) override;
-};
-
-class VoqB : public Voq
-{
-public:
-    explicit VoqB(Port* port): Voq(port, "VoqB", B) { }
-
-    void calcVlinkLoad() override;
-
-    Error calcCommon(Vlink* vl) override;
-};
+//// base class for VoqA and VoqB
+//class Voq : public GroupDelays
+//{
+//public:
+//    Voq(Device* device, const std::string& schemeName, celltype_t cellType)
+//        : GroupDelays(device, schemeName, cellType), outPrevLoadSum(0), loadReady(false) {}
+//
+//    // C_l values by l on prev switch
+//    defaultIntMap vlinkLoad;
+//
+//    // C_pj values by p on prev switch, where j ~ this->port->outPrev
+//    defaultIntMap outPrevLoad;
+//
+//    // sum of outPrevLoad values
+//    int outPrevLoadSum;
+//
+//    // is information about input load (outPrevLoad and its sum) ready
+//    bool loadReady;
+//
+//    void calcOutPrevLoad();
+//
+//    virtual void calcVlinkLoad() = 0;
+//};
+//
+//class VoqA : public Voq
+//{
+//public:
+//    explicit VoqA(Port* port): Voq(port, "VoqA", A) {}
+//
+//    void calcVlinkLoad() override;
+//
+//    Error calcCommon(Vlink* vl) override;
+//};
+//
+//class VoqB : public Voq
+//{
+//public:
+//    explicit VoqB(Port* port): Voq(port, "VoqB", B) { }
+//
+//    void calcVlinkLoad() override;
+//
+//    Error calcCommon(Vlink* vl) override;
+//};
 
 // if cells = true, skmax is rounded up to whole number of cells
 template<bool cells = false>
-class OqPacket : public PortDelays
+class OqPacket : public GroupDelays
 {
 public:
-    explicit OqPacket(Port* port)
-        : PortDelays(port, "OqPacket<" + std::to_string(cells) + ">", P), bp(-1) {}
+    explicit OqPacket(Device* device)
+        : GroupDelays(device, "OqPacket<" + std::to_string(cells) + ">", P), bp(-1) {}
 
     // == Rk,j(t) - Jk, k == vl->id
     int64_t delayFunc(int64_t t, Vlink* vl) const;
@@ -155,11 +165,11 @@ private:
 };
 
 // OqB without packet FIFO
-class OqCellB : public PortDelays
+class OqCellB : public GroupDelays
 {
 public:
-    explicit OqCellB(Port* port)
-        : PortDelays(port, "OqCellB", B), bp(-1) {}
+    explicit OqCellB(Device* device)
+        : GroupDelays(device, "OqCellB", B), bp(-1) {}
 
     // == Rk,j(t) - Jk, k == vl->id
     int64_t delayFunc(int64_t t, Vlink* vl) const;
@@ -176,15 +186,15 @@ private:
 // two different schemes stitched together.
 // although, works correctly only if Scheme1 out delay is calculated
 // as if next (not current) switch has cell type P
-template<class Scheme1, class Scheme2, PortDelays::celltype_t ct>
-class TwoSchemes : public PortDelays
+template<class Scheme1, class Scheme2, GroupDelays::celltype_t ct>
+class TwoSchemes : public GroupDelays
 {
-    static_assert(std::is_base_of<PortDelays, Scheme1>::value && std::is_base_of<PortDelays, Scheme2>::value,
-                  "parameters of TwoSchemes must inherit from PortDelays");
+    static_assert(std::is_base_of<GroupDelays, Scheme1>::value && std::is_base_of<GroupDelays, Scheme2>::value,
+                  "parameters of TwoSchemes must inherit from GroupDelays");
 public:
-    explicit TwoSchemes(Port* port)
-        : PortDelays(port, "TwoSchemes", ct),
-        midDelaysReady(false), scheme1(port), scheme2(port)
+    explicit TwoSchemes(Device* device)
+        : GroupDelays(device, "TwoSchemes", ct),
+          midDelaysReady(false), scheme1(device), scheme2(device)
     {
         schemeName += "<" + scheme1.schemeName + ", " + scheme2.schemeName + ">";
     }
@@ -197,8 +207,8 @@ private:
     Scheme2 scheme2;
 };
 
-using OqA = TwoSchemes<OqPacket<true>, OqPacket<>, PortDelays::A>;
-using OqB = TwoSchemes<OqCellB, OqPacket<>, PortDelays::B>;
+using OqA = TwoSchemes<OqPacket<true>, OqPacket<>, GroupDelays::A>;
+using OqB = TwoSchemes<OqCellB, OqPacket<>, GroupDelays::B>;
 
 // == Rk,j(t) - Jk, k == curVlId
 template<bool cells>
@@ -231,7 +241,7 @@ Error OqPacket<cells>::calcCommon(Vlink* curVl) {
     if(bp < 0) {
         bp = busyPeriod(inDelays, config, cells);
         if(bp < 0) {
-            return Error(Error::BpTooLong, OqOverloadVerbose(port));
+            return Error(Error::BpTooLong, OqOverloadVerbose(curVl, device));
         }
     }
     int64_t delayFuncMax = -1;
@@ -281,7 +291,7 @@ Error OqPacket<cells>::calcCommon(Vlink* curVl) {
     return Error::Success;
 }
 
-template<class Scheme1, class Scheme2, PortDelays::celltype_t ct>
+template<class Scheme1, class Scheme2, GroupDelays::celltype_t ct>
 Error TwoSchemes<Scheme1, Scheme2, ct>::calcCommon(Vlink* curVl) {
     if(!midDelaysReady) {
         scheme1.setInDelays(inDelays);
