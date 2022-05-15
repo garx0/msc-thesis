@@ -9,27 +9,26 @@
 #include <map>
 #include <cassert>
 #include <set>
-#include "algo.h"
 
 class Vlink;
 class Vnode;
 class Device;
-class GroupDelays;
-class GroupDelaysFactory;
+class DelayTask;
 class Port;
 class VlinkConfig;
 class CioqMap;
 class PortsSubgraph;
+class QRTA;
 
 using VlinkOwn = std::unique_ptr<Vlink>;
 using VnodeOwn = std::unique_ptr<Vnode>;
 using DeviceOwn = std::unique_ptr<Device>;
-using GroupDelaysOwn = std::unique_ptr<GroupDelays>;
+using DelayTaskOwn = std::unique_ptr<DelayTask>;
 using PortOwn = std::unique_ptr<Port>;
 using VlinkConfigOwn = std::unique_ptr<VlinkConfig>;
-using PortDelaysFactoryOwn = std::unique_ptr<GroupDelaysFactory>;
 using CioqMapOwn = std::unique_ptr<CioqMap>;
 using PortsSubgraphOwn = std::unique_ptr<PortsSubgraph>;
+using QRTAOwn = std::unique_ptr<QRTA>;
 
 // returns shuffled {0, ..., size - 1} vector if shuffle=true, not shuffled otherwise
 // uses C random tools
@@ -38,7 +37,7 @@ std::vector<int> idxRange(int size, bool shuffle);
 
 class Error {
 public:
-    enum ErrorType {Success, Cycle, VoqOverload, BpTooLong};
+    enum ErrorType {Success, Cycle, VoqOverload, BpTooLong, CyclicTooLong};
 
     Error(ErrorType type = Success, const std::string& verbose = "", const std::string& verboseRaw = "")
         : type(type), verbose(verbose), verboseRaw(verboseRaw) {}
@@ -69,6 +68,8 @@ public:
                 return "VoqOverload";
             case BpTooLong:
                 return "BpTooLong";
+            case CyclicTooLong:
+                return "CyclicTooLong";
         }
         return "";
     }
@@ -113,14 +114,18 @@ public:
 
     int64_t linkRate; // R, byte/ms
     std::string scheme;
-    int cellSize; // σ, bytes
-    int voqL; // for scheme == "VoqA", "VoqB"
     std::map<int, VlinkOwn> vlinks;
     std::map<int, DeviceOwn> devices;
     std::map<int, int> _portDevice; // get device ID by input/output port ID
     std::map<int, int> links; // port1 id -> id of port2 connected with port1 via link
+    int n_fabrics;
+    int n_queues;
     uint64_t bpMaxIter;
-    PortDelaysFactoryOwn factory;
+    uint64_t cyclicMaxIter;
+
+    std::vector<DelayTask*> tasks;
+    std::vector<DelayTask*> acyclicTasksOrder;
+    std::vector<DelayTask*> cyclicTasksOrder;
 
     Vlink* getVlink(int id) const;
 
@@ -138,16 +143,20 @@ public:
 
     // random order of vlinks and destinations processing if shuffle=true
     // prints delays if print=true
-    Error calcE2e(bool print = false);
+    Error calcDelays(bool print = false);
 
-    Error detectCycles(bool shuffle = false);
+    Error buildTables();
 
     // calculate bwUsage() values on all input ports and return them as map by port number
-    std::map<int, double> bwUsage(bool cells = false);
+    std::map<int, double> bwUsage();
 
     // convert from linkByte measure unit to ms
     // (by division by link rate in byte/ms)
     double linkByte2ms(int64_t linkByte) { return static_cast<double>(linkByte) / linkRate; }
+private:
+    Error buildDelayTasks();
+
+    Error buildTasksOrder();
 };
 
 class Vlink
@@ -171,39 +180,51 @@ public:
 class Device
 {
 public:
-    enum Type {Switch, End};
+    enum type_t {Switch, End};
+    enum elem_t {F, P}; // fabric, output port
 
-    Device(VlinkConfig* config, Type type, int id)
-        : config(config), id(id), type(type), cioqMap(std::make_unique<CioqMap>(this)) {}
+    Device(VlinkConfig* config, type_t type, int id)
+        : config(config), id(id), type(type), cioqMap(nullptr) {}
 
     // called when config->_portDevices is complete
     void AddPorts(const std::vector<int>& portIds);
 
     VlinkConfig* const config;
     const int id;
-    const Type type;
+    const type_t type;
 
     std::map<int, PortOwn> ports; // input ports
-    std::map<int, Port*> outPorts; // input ports connected to this device's output ports
+//    std::map<int, Port*> outPorts; // input ports connected to this device's output ports
     std::vector<Vlink*> sourceFor; // Vlinks which have this device as source
 
     CioqMapOwn cioqMap;
+    std::map<std::pair<elem_t, int>, QRTAOwn> qrtas;
 
     Port* getPort(int portId) const;
 
     std::vector<Port*> getAllPorts() const;
 
-    std::vector<int> getAllPortIds() const;
+    std::vector<Port*> getAllOutPortsIn() const;
+
+    std::vector<int> getAllPortIds() const; // sorted by number ascending
+
+    std::vector<int> getAllOutPortPseudoIds() const; // sorted by number ascending
 
     // get input port connected with output port portId
     Port* fromOutPort(int portId) const;
 
-    bool hasVlinks(int in_port_id, int out_port_id) const;
+    // get input port connected with output port with pseudo id portPseudoId (which is id of that input port)
+    Port* fromOutPortByPseudoId(int portPseudoId) const;
+
+    bool hasVlinks(int in_port_id, int out_port_pseudo_id) const;
 
     std::vector<Vnode*> getVlinks(int in_port_id, int out_port_id) const;
 };
 
 // INPUT PORT
+// an output port may be referred by either its id or its pseudo-id.
+// pseudo-id of an output port is id of an input port connected with it by a link.
+// so instead of any output port of a device we can refer to an input port of another device, and this mapping is bijective.
 class Port
 {
 public:
@@ -213,7 +234,6 @@ public:
     Device* const device;
     Device* prevDevice;
     std::map<int, Vnode*> vnodes; // get Vnode by Vlink id
-    GroupDelaysOwn delays; // delays until queuing in switch which contains this input port
 
     Port(Device* device, int number);
 
@@ -224,19 +244,21 @@ public:
     // usage ratio of the connected link bandwidth by VLs
     // must be in [0,1] if VL config is correct
     // calculated as sum of smax/bag/linkRate by VLs that using this port
-    double bwUsage(bool cells = false) const;
+    double bwUsage() const;
 };
 
 // time is measured in bytes through link = (time in ms) * (link rate in byte/ms) / (1 byte)
 class DelayData
 {
 public:
-    DelayData(): _vl(nullptr), _dmin(-2), _jit(-1), _dmax(-1), _ready(false) {}
-    DelayData(Vlink* vl, int64_t dmin, int64_t jit): _vl(vl), _dmin(dmin), _jit(jit), _dmax(dmin + jit), _ready(true) {}
+    DelayData(): _vl(nullptr), _vnode_next(nullptr), _dmin(-2), _jit(-1), _dmax(-1), _ready(false) {} // TODO remove vnode_next field later
+    DelayData(Vlink* vl, Vnode* vnode_next, int64_t dmin, int64_t jit): _vl(vl), _vnode_next(vnode_next), _dmin(dmin), _jit(jit), _dmax(dmin + jit), _ready(true) {}
 
     bool ready() const { return _ready; }
 
     Vlink* vl() const { return _vl; }
+
+    Vnode* vnode_next() const { return _vnode_next; }
 
     int64_t dmin() const { return _ready ? _dmin : -1; }
 
@@ -246,68 +268,11 @@ public:
 
 private:
     Vlink* _vl;
+    Vnode* _vnode_next;
     int64_t _dmin;
     int64_t _jit;
     int64_t _dmax;
     bool _ready;
-};
-
-class GroupDelays
-{
-public:
-    enum celltype_t {P, A, B};
-
-    explicit GroupDelays(Device* device, const std::string& schemeName, celltype_t cellType)
-    : config(device->config), device(device), schemeName(schemeName),
-      cellType(cellType), _inputReady(false) {}
-
-    VlinkConfig* const config;
-//    Port* const port;
-    Device* const device;
-    std::string schemeName;
-    celltype_t const cellType;
-
-    void setInputReady() { _inputReady = true; }
-
-    bool readyIn() { return _inputReady; }
-
-    DelayData getDelay(int vl) const { return getFromMap(vl, delays); }
-
-    void setDelay(DelayData delay);
-
-    DelayData getInDelay(int vl) const { return getFromMap(vl, inDelays); }
-
-    void setInDelay(DelayData delay);
-
-    const std::map<int, DelayData>& getDelays() const { return delays; }
-
-    const std::map<int, DelayData>& getInDelays() const { return inDelays; }
-
-    void setInDelays(const std::map<int, DelayData>& values);
-
-    // max time from start of transfer into link
-    // to start of entering into queue of next switch
-    int64_t trMax(Vlink* vl) const;
-
-    // min time from start of transfer into link
-    // to start of entering into queue of next switch
-    int64_t trMin(Vlink* vl) const;
-
-    // first == true if prev device is switch
-    Error calc(Vlink* vl, bool first = false);
-
-    // outDelay[vl] must have been calculated prior to call of this method
-    DelayData e2e(int vl) const;
-
-    // is called in calc if prev device is switch
-    virtual Error calcCommon(Vlink* vl) = 0;
-
-protected:
-    std::map<int, DelayData> delays;
-    std::map<int, DelayData> inDelays;
-    bool _inputReady;
-
-    static DelayData getFromMap(int vl, const std::map<int, DelayData>& delaysMap);
 };
 
 class Vnode
@@ -324,18 +289,14 @@ public:
     Port* const in; // in port of this device
     std::vector<VnodeOwn> next;
     int outPrev; // == in->outPrev - id of out port of prev device
-    enum {NotVisited, VisitedNotPrepared, Prepared} cycleState; // for cycle detecting
-    bool calcPrepared;
+
+    // key is <element type, branchId>, where branchId == vnodeX->in->id, where vnodeX in this->next
+    std::map<std::pair<Device::elem_t, int>, DelayTaskOwn> delayTasks;
 
     // e2e-delay, used only if this->device->schemeName == Device::Dst
     DelayData e2e;
 
-    // random order of data dependency graph traversal if shuffle=true
     Error calcE2e();
-
-    // find cycles in data dependency graph of VL configuration
-    // random order of data dependency graph traversal if shuffle=true
-    Error prepareTest(bool shuffle = false);
 
     // portId is id of an input port in another device
     Vnode* selectNext(int portId) const;
@@ -345,56 +306,69 @@ public:
 
 private:
     // prepare input delay data for calculation of delay of this vnode AND calculate this delay
-    Error prepareCalc();
+//    Error prepareCalc();
 
     // recursive helper function for getAllDests()
     void _getAllDests(std::vector<const Vnode*>& vec) const;
 };
 
-//Error completeCheckVoq(Device *device);
-
-class GroupDelaysFactory {
+// delay for packets of a VL from generation to leaving a network element
+// destination output port of a VL in a device containing this network element is specified
+// (but in form of vnode of this VL in the input port connected with this output port)
+class DelayTask
+{
 public:
+    // type of element
 
-    GroupDelaysFactory() { RegisterAll(); }
+    explicit DelayTask(Vlink* vl, Vnode* vnode_next, Device::elem_t elem, QRTA* qrta)
+            : config(vl->config), vl(vl), vnode(vnode_next->prev), vnode_next(vnode_next),
+              device(vnode_next->prev->device),
+              elem(elem), in_id(vnode_next->prev->in->id), out_pseudo_id(vnode_next->in->id),
+              id(std::make_tuple(vl->id, vnode_next->in->id, elem)),
+              qrta(qrta), delay(vl, vnode_next, 0, 0),
+              in_cycle(true), iter(0), cyclic_layer(-1), max_input_layer(-1) {}
 
-    // register Creators for all GroupDelays types
-    void RegisterAll();
+    VlinkConfig* const config;
+    Vlink* const vl;
+    Vnode* const vnode;
+    Vnode* const vnode_next;
+    Device* const device;
+    Device::elem_t const elem;
+    int const in_id; // input port id
+    int const out_pseudo_id; // output port pseudo id
+    std::tuple<int, int, Device::elem_t> const id; // elem, vl->id, out_pseudo_id
+    QRTA* const qrta;
+    DelayData delay;
 
-    // interface for TCreator
-    // is to unite TCreator objects creating different GroupDelays under one schemeName
-    class ICreator {
-    public:
-        ICreator() = default;
-        virtual ~ICreator() = default;
-        virtual GroupDelaysOwn Create(Port*) const = 0;
-    };
+    // Multiset of delay tasks containing input data for this delay task.
+    // Let inputs[vl_id, branch_id] == delay_task, then:
+    // vl_id == delay_task->vl->id
+    // delay_task->vnode_next == this->vnode
+    // delay_task->elemType != this->elemType
+    // branch_id == vnodeX->in->id for some vnodeX in delay_task_vnode_next->next
+    // If VL X splits in this->device, and N of its branches through this->device are concurring with
+    // the branch of this->vl to this->vnode_next, then N copies of DelayTask VL X on previous device
+    // are included in this map, and they are distinguished by branch_id.
+    std::map<std::pair<int, int>, DelayTask*> inputs;
 
-    // class that create TGroupDelays objects with its constructor arguments
-    template<typename TGroupDelays>
-    class TCreator : public ICreator {
-    public:
-        GroupDelaysOwn Create(Port* port) const override {
-            if constexpr(std::is_constructible_v<TGroupDelays, decltype(port)>) {
-                return std::make_unique<TGroupDelays>(port);
-            } else {
-                throw std::logic_error("can't make GroupDelays with these argument types");
-            }
-        }
-    };
+    // Set of delay tasks for which this delay task contains input data.
+    // Let inputs[vl_id, branch_id] == delay_task, then:
+    // vl_id == delay_task->vl->id
+    // branch_id == delay_task->vnode_next->in->id
+    // delay_task->elemType != this->elemType
+    std::map<std::pair<int, int>, DelayTask*> output_for;
 
-    // register TCreator<TGroupDelays> at specified name
-    template<typename TGroupDelays>
-    void AddCreator(const std::string& name) {
-        creators[name] = std::make_shared<GroupDelaysFactory::TCreator<TGroupDelays>>();
-    }
+    bool in_cycle;
+    int iter;
+    int cyclic_layer;
+    int max_input_layer;
 
-    // calls corresponding Create method of Creator registered at specified name
-    GroupDelaysOwn Create(const std::string& name, Port*);
+    void get_input_data();
+    void clear_bp();
+    Error calc_delay_init();
+    Error calc_delay_max();
 
-private:
-    using TCreatorPtr = std::shared_ptr<ICreator>;
-    std::map<std::string, TCreatorPtr> creators;
+//    static DelayData getFromMap(int vl, int next_port, const std::map<std::pair<int, int>, DelayData>& delaysMap);
 };
 
 class CioqMap
@@ -408,7 +382,7 @@ public:
     int n_queues;
     int n_fabrics;
 
-    // input port id -> output port id -> queue id
+    // input port id -> output port pseudo-id -> queue id
     // queue id = 0, 1, identifying it between queues of an input port
     std::map<int, std::map<int, int>> queueTable;
 
@@ -417,10 +391,10 @@ public:
 
     std::vector<PortsSubgraphOwn> comps;
 
-    // in_port_id, out_port_id -> PortsSubgraph
+    // in_port_id, out_port_pseudo_id -> PortsSubgraph
     std::map<std::pair<int, int>, PortsSubgraph*> compsIndex;
 
-    void setMap(std::map<int, std::map<int, int>> _queueTable, std::map<std::pair<int, int>, int> _fabricTable);
+    void setMap(const std::map<int, std::map<int, int>>& _queueTable, const std::map<std::pair<int, int>, int>& _fabricTable);
 
     int getQueueId(int in_port_id, int out_port_id) const;
 
@@ -428,6 +402,7 @@ public:
 
     int getFabricIdByEdge(int in_port_id, int out_port_id) const;
 
+    // find a component of a fabric-induced subgraph of the switch traffic graph, that has the specified input queue
     std::set<std::pair<int, int>> buildComp(int in_port_id, int queue_id) const;
 };
 
@@ -437,10 +412,11 @@ void generateTableBasic(Device* device, int n_queues = 2, int n_fabrics = 8);
 class PortsSubgraph
 {
 public:
-    PortsSubgraph() {}
+    PortsSubgraph(int id): id(id) {}
 
-    PortsSubgraph(std::set<std::pair<int, int>> edges): edges(edges) {}
+    PortsSubgraph(int id, std::set<std::pair<int, int>> edges): id(id), edges(edges) {}
 
+    int id;
     std::set<std::pair<int, int>> edges;
 
     bool isConnected(int node_in, int node_out) const;

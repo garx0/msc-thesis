@@ -24,8 +24,8 @@ std::vector<int> TokenizeCsv(const std::string& str) {
 
 // doc can be modified. it will be used when exporting config to xml with new data
 VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme,
-        int cellSize, int voqPeriod, double jitDefaultValue, int forceLinkRate,
-        double loadFactor, uint64_t bpMaxIter)
+        double jitDefaultValue, int forceLinkRate,
+        double loadFactor, uint64_t bpMaxIter, uint64_t cyclicMaxIter)
 {
     VlinkConfigOwn config = std::make_unique<VlinkConfig>();
     try {
@@ -35,10 +35,11 @@ VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme,
                            ? static_cast<int64_t>(
                                    std::stof(resources->FirstChildElement("link")->Attribute("capacity")))
                            : forceLinkRate;
-        config->cellSize = cellSize;
-        config->voqL = voqPeriod;
+        config->n_fabrics = 8;
+        config->n_queues = 2;
         config->scheme = scheme;
         config->bpMaxIter = bpMaxIter;
+        config->cyclicMaxIter = cyclicMaxIter;
 
         for(auto res = resources->FirstChildElement("link");
              res != nullptr;
@@ -120,9 +121,6 @@ VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme,
         return nullptr;
     };
     printf("%ld vlinks\n", config->vlinks.size());
-    if(config->scheme == "VoqA" || config->scheme == "VoqB") {
-        printf("VOQ period = %.1f ms\n", config->linkByte2ms(config->voqL * config->cellSize));
-    }
     return config;
 }
 
@@ -138,12 +136,6 @@ bool toXml(VlinkConfig* config, tinyxml2::XMLDocument& doc) {
         res = res->NextSiblingElement("switch"))
     {
         res->SetAttribute("scheme", config->scheme.c_str());
-        if(config->scheme != "OqPacket") {
-            res->SetAttribute("cellSize", config->cellSize);
-        }
-        if(config->scheme == "VoqA" || config->scheme == "VoqB") {
-            res->SetAttribute("processingPeriod", config->voqL);
-        }
     }
     auto vls = afdxxml->FirstChildElement("virtualLinks");
     for(auto vlEl = vls->FirstChildElement("virtualLink");

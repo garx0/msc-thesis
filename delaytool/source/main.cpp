@@ -24,17 +24,12 @@ int main(int argc, char* argv[]) {
             .help("output xml file with delays of all VLs to all their destinations");
 
     program.add_argument("-s", "--scheme")
-            .help("scheme schemeName: voqa|voqb|oqp|oqa|oqb (default: oqp). oqp ~ OQ; oqa, oqb ~ CIOQ")
+            .help("scheme name: oq|cioq (default: cioq)")
             .default_value(std::string("OqPacket"))
             .action([](const std::string& value) {
                 static const std::map<std::string, std::string> mapping = {
-                        {"voqa", "VoqA"},
-                        {"voqb", "VoqB"},
-                        {"oqp", "OqPacket"},
-                        {"oqa", "OqA"},
-                        {"oqb", "OqB"},
-                        {"oqc", "OqCellB"}, // DEBUG
-                        {"mock", "Mock"}, // DEBUG
+                        {"oq", "OQ"},
+                        {"cioq", "CIOQ"},
                 };
                 auto found = mapping.find(strToLower(value));
                 if(found != mapping.end()) {
@@ -44,15 +39,10 @@ int main(int argc, char* argv[]) {
                 }
             });
 
-    program.add_argument("-c", "--cellsize")
-            .help("cell size in bytes for cell scheme (VOQ-A/B, OQ-A/B)")
-            .action([](const std::string& value) { return std::stoi(value); })
-            .default_value(cellSizeDefault);
-
-    program.add_argument("-p", "--periodvoq")
-            .help("clock period for VOQ scheme")
-            .action([](const std::string& value) { return std::stoi(value); })
-            .default_value(voqPeriodDefault);
+//    program.add_argument("--nfabrics")
+//            .help("clock period for VOQ scheme")
+//            .action([](const std::string& value) { return std::stoi(value); })
+//            .default_value(nFabricsDefault);
 
     program.add_argument("--printconfig")
             .implicit_value(true)
@@ -82,9 +72,15 @@ int main(int argc, char* argv[]) {
     program.add_argument("--bpmaxit")
             .action([](const std::string& value) { return static_cast<uint64_t>(std::stof(value)); })
             .default_value(static_cast<uint64_t>(100000))
-            .help(std::string("max number of iterations of calculating busy period for oqp/oqa/oqb.\n")
+            .help(std::string("max number of iterations of calculating busy period.\n")
                   + "its calculation won't be endless because its parameters are checked for a sign of this earlier,"
                   + "but it may take too long. set 0 for no restrictions.");
+
+    program.add_argument("--cycmaxit")
+            .action([](const std::string& value) { return static_cast<uint64_t>(std::stof(value)); })
+            .default_value(static_cast<uint64_t>(100000))
+            .help(std::string("max number of iterations for calculating delays if the data dependencies are cyclic.\n")
+                  + "set 0 for no restrictions.");
 
     try {
         program.parse_args(argc, argv);
@@ -96,14 +92,13 @@ int main(int argc, char* argv[]) {
     std::string fileIn = program.get<std::string>("input");
     std::string fileOut = program.get<std::string>("output");
     std::string scheme = program.get<std::string>("--scheme");
-    int cellSize = program.get<int>("--cellsize");
-    int voqPeriod = program.get<int>("--periodvoq");
     float startJitDefault = program.get<float>("--jitdef");
     int forceLinkRate = program.get<int>("--rate");
     float sizeFactor = program.get<float>("--factor");
     bool printConfig = program.get<bool>("--printconfig");
     bool printDelays = program.get<bool>("--printdelays");
     uint64_t bpMaxIter = program.get<uint64_t>("--bpmaxit");
+    uint64_t cyclicMaxIter = program.get<uint64_t>("--cycmaxit");
 
     tinyxml2::XMLDocument doc;
     auto err = doc.LoadFile(fileIn.c_str());
@@ -116,8 +111,8 @@ int main(int argc, char* argv[]) {
         fprintf(stderr, "error: can't open output file: %s\n", fileOut.c_str());
         return 0;
     }
-    VlinkConfigOwn config = fromXml(doc, scheme, cellSize, voqPeriod,
-            startJitDefault, forceLinkRate, sizeFactor, bpMaxIter);
+    VlinkConfigOwn config = fromXml(doc, scheme,
+            startJitDefault, forceLinkRate, sizeFactor, bpMaxIter, cyclicMaxIter);
     if(config == nullptr) {
         fprintf(stderr, "error reading from xml\n");
         fclose(fpOut);
@@ -135,26 +130,21 @@ int main(int argc, char* argv[]) {
     auto bwStats = getStats(bwUsage);
     printf("bwUsage: min=%f, max=%f, mean=%f, var=%f\n",
            bwStats.min, bwStats.max, bwStats.mean, bwStats.var);
-    if(config->scheme == "OqA" || config->scheme == "OqB") {
-        auto bwUsageCells = config->bwUsage(true);
-        if(!bwCorrect(bwUsageCells)) {
-            fprintf(stderr, "error: bandwidth usage in cells is more than 100%%\n");
-            fclose(fpOut);
-            return 0;
-        }
-//        auto bwStatsCells = getStats(bwUsageCells);
-//        printf("cells bwUsage: min=%f, max=%f, mean=%f, var=%f\n",
-//               bwStatsCells.min, bwStatsCells.max, bwStatsCells.mean, bwStatsCells.var);
-    }
+
     try {
-        Error calcErr = config->detectCycles(false);
-        if(calcErr) {
+        Error cioqErr = config->buildTables();
+        if(cioqErr) {
             fprintf(stderr, "error calculating delay because of invalid VL configuration: %s, %s\n",
-                    calcErr.TypeString().c_str(), calcErr.Verbose().c_str());
+                    cioqErr.TypeString().c_str(), cioqErr.Verbose().c_str());
             fclose(fpOut);
             return 0;
         }
-        calcErr = config->calcE2e(printDelays);
+    } catch(std::exception& e) {
+        fprintf(stderr, "error calculating delay because of exception: %s\n", e.what());
+    }
+
+    try {
+        Error calcErr = config->calcDelays(printDelays);
         if(calcErr) {
             fprintf(stderr, "error calculating delay because of invalid VL configuration: %s, %s\n",
                     calcErr.TypeString().c_str(), calcErr.Verbose().c_str());
