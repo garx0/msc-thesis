@@ -1,0 +1,172 @@
+<?xml version="1.0" ?>
+<afdxxml name="test project">
+	<resources>
+		<partition connectedTo="49" name="partition1" number="1" x="161.5" y="20.5"/>
+		<partition connectedTo="50" name="partition2" number="2" x="194.5" y="18.5"/>
+		<partition connectedTo="51" name="partition3" number="3" x="234.5" y="17.5"/>
+		<partition connectedTo="52" name="partition4" number="4" x="269.5" y="15.5"/>
+		<partition connectedTo="53" name="partition5" number="5" x="301.5" y="14.5"/>
+		<partition connectedTo="54" name="partition6" number="6" x="340.5" y="17.5"/>
+		<partition connectedTo="55" name="partition7" number="7" x="366.5" y="17.5"/>
+		<partition connectedTo="56" name="partition8" number="8" x="388.5" y="17.5"/>
+		<partition connectedTo="57" name="partition9" number="9" x="413.5" y="18.5"/>
+		<partition connectedTo="58" name="partition10" number="10" x="437.5" y="16.5"/>
+		<partition connectedTo="59" name="partition11" number="11" x="462.5" y="19.5"/>
+		<partition connectedTo="60" name="partition12" number="12" x="491.5" y="19.5"/>
+		<partition connectedTo="61" name="partition13" number="13" x="566.5" y="78.5"/>
+		<partition connectedTo="62" name="partition14" number="14" x="567.5" y="109.5"/>
+		<partition connectedTo="63" name="partition15" number="15" x="565.5" y="135.5"/>
+		<partition connectedTo="64" name="partition16" number="16" x="565.5" y="159.5"/>
+		<partition connectedTo="65" name="partition17" number="17" x="565.5" y="192.5"/>
+		<partition connectedTo="66" name="partition18" number="18" x="566.5" y="224.5"/>
+		<partition connectedTo="67" name="partition19" number="19" x="567.5" y="247.5"/>
+		<partition connectedTo="68" name="partition20" number="20" x="572.5" y="272.5"/>
+		<partition connectedTo="69" name="partition21" number="21" x="567.5" y="304.5"/>
+		<partition connectedTo="70" name="partition22" number="22" x="565.5" y="327.5"/>
+		<partition connectedTo="71" name="partition23" number="23" x="565.5" y="349.5"/>
+		<partition connectedTo="72" name="partition24" number="24" x="562.5" y="373.5"/>
+		<partition connectedTo="73" name="partition25" number="25" x="503.5" y="448.5"/>
+		<partition connectedTo="74" name="partition26" number="26" x="473.5" y="442.5"/>
+		<partition connectedTo="75" name="partition27" number="27" x="452.5" y="445.5"/>
+		<partition connectedTo="76" name="partition28" number="28" x="425.5" y="444.5"/>
+		<partition connectedTo="77" name="partition29" number="29" x="398.5" y="445.5"/>
+		<partition connectedTo="78" name="partition30" number="30" x="362.5" y="447.5"/>
+		<partition connectedTo="79" name="partition31" number="31" x="336.5" y="447.5"/>
+		<partition connectedTo="80" name="partition32" number="32" x="302.5" y="446.5"/>
+		<partition connectedTo="81" name="partition33" number="33" x="273.5" y="444.5"/>
+		<partition connectedTo="82" name="partition34" number="34" x="240.5" y="444.5"/>
+		<partition connectedTo="83" name="partition35" number="35" x="215.5" y="443.5"/>
+		<partition connectedTo="84" name="partition36" number="36" x="186.5" y="442.5"/>
+		<partition connectedTo="85" name="partition37" number="37" x="60.5" y="395.5"/>
+		<partition connectedTo="86" name="partition38" number="38" x="60.5" y="362.5"/>
+		<partition connectedTo="87" name="partition39" number="39" x="61.5" y="330.5"/>
+		<partition connectedTo="88" name="partition40" number="40" x="62.5" y="298.5"/>
+		<partition connectedTo="89" name="partition41" number="41" x="62.5" y="268.5"/>
+		<partition connectedTo="90" name="partition42" number="42" x="62.5" y="238.5"/>
+		<partition connectedTo="91" name="partition43" number="43" x="62.5" y="212.5"/>
+		<partition connectedTo="92" name="partition44" number="44" x="62.5" y="181.5"/>
+		<partition connectedTo="93" name="partition45" number="45" x="62.5" y="151.5"/>
+		<partition connectedTo="94" name="partition46" number="46" x="63.5" y="126.5"/>
+		<partition connectedTo="95" name="partition47" number="47" x="62.5" y="96.5"/>
+		<partition connectedTo="96" name="partition48" number="48" x="64.5" y="62.5"/>
+		<endSystem name="endSystem1" number="49" ports="1" x="161.5" y="62.5"/>
+		<endSystem name="endSystem2" number="50" ports="2" x="197.5" y="61.5"/>
+		<endSystem name="endSystem3" number="51" ports="3" x="233.5" y="63.5"/>
+		<endSystem name="endSystem4" number="52" ports="4" x="269.5" y="64.5"/>
+		<endSystem name="endSystem5" number="53" ports="5" x="299.5" y="63.5"/>
+		<endSystem name="endSystem6" number="54" ports="6" x="343.5" y="65.5"/>
+		<endSystem name="endSystem7" number="55" ports="7" x="373.5" y="63.5"/>
+		<endSystem name="endSystem8" number="56" ports="8" x="394.5" y="63.5"/>
+		<endSystem name="endSystem9" number="57" ports="9" x="418.5" y="62.5"/>
+		<endSystem name="endSystem10" number="58" ports="10" x="443.5" y="61.5"/>
+		<endSystem name="endSystem11" number="59" ports="11" x="468.5" y="62.5"/>
+		<endSystem name="endSystem12" number="60" ports="12" x="494.5" y="63.5"/>
+		<endSystem name="endSystem13" number="61" ports="13" x="524.5" y="74.5"/>
+		<endSystem name="endSystem14" number="62" ports="14" x="525.5" y="104.5"/>
+		<endSystem name="endSystem15" number="63" ports="15" x="526.5" y="133.5"/>
+		<endSystem name="endSystem16" number="64" ports="16" x="524.5" y="160.5"/>
+		<endSystem name="endSystem17" number="65" ports="17" x="522.5" y="188.5"/>
+		<endSystem name="endSystem18" number="66" ports="18" x="519.5" y="213.5"/>
+		<endSystem name="endSystem19" number="67" ports="19" x="523.5" y="247.5"/>
+		<endSystem name="endSystem20" number="68" ports="20" x="522.5" y="273.5"/>
+		<endSystem name="endSystem21" number="69" ports="21" x="521.5" y="294.5"/>
+		<endSystem name="endSystem22" number="70" ports="22" x="522.5" y="326.5"/>
+		<endSystem name="endSystem23" number="71" ports="23" x="519.5" y="349.5"/>
+		<endSystem name="endSystem24" number="72" ports="24" x="520.5" y="377.5"/>
+		<endSystem name="endSystem25" number="73" ports="25" x="501.5" y="405.5"/>
+		<endSystem name="endSystem26" number="74" ports="26" x="471.5" y="407.5"/>
+		<endSystem name="endSystem27" number="75" ports="27" x="444.5" y="402.5"/>
+		<endSystem name="endSystem28" number="76" ports="28" x="421.5" y="400.5"/>
+		<endSystem name="endSystem29" number="77" ports="29" x="394.5" y="396.5"/>
+		<endSystem name="endSystem30" number="78" ports="30" x="363.5" y="396.5"/>
+		<endSystem name="endSystem31" number="79" ports="31" x="330.5" y="393.5"/>
+		<endSystem name="endSystem32" number="80" ports="32" x="300.5" y="393.5"/>
+		<endSystem name="endSystem33" number="81" ports="33" x="272.5" y="391.5"/>
+		<endSystem name="endSystem34" number="82" ports="34" x="238.5" y="390.5"/>
+		<endSystem name="endSystem35" number="83" ports="35" x="209.5" y="392.5"/>
+		<endSystem name="endSystem36" number="84" ports="36" x="184.5" y="391.5"/>
+		<endSystem name="endSystem37" number="85" ports="37" x="119.5" y="389.5"/>
+		<endSystem name="endSystem38" number="86" ports="38" x="113.5" y="356.5"/>
+		<endSystem name="endSystem39" number="87" ports="39" x="117.5" y="328.5"/>
+		<endSystem name="endSystem40" number="88" ports="40" x="118.5" y="293.5"/>
+		<endSystem name="endSystem41" number="89" ports="41" x="117.5" y="267.5"/>
+		<endSystem name="endSystem42" number="90" ports="42" x="119.5" y="237.5"/>
+		<endSystem name="endSystem43" number="91" ports="43" x="118.5" y="212.5"/>
+		<endSystem name="endSystem44" number="92" ports="44" x="117.5" y="180.5"/>
+		<endSystem name="endSystem45" number="93" ports="45" x="114.5" y="150.5"/>
+		<endSystem name="endSystem46" number="94" ports="46" x="116.5" y="122.5"/>
+		<endSystem name="endSystem47" number="95" ports="47" x="109.5" y="90.5"/>
+		<endSystem name="endSystem48" number="96" ports="48" x="109.5" y="59.5"/>
+		<switch name="switch1" number="97" ports="49,50,51,52,53,54,55,56,57,58,59,60,61,62" x="308.5" y="167.5"/>
+		<switch name="switch2" number="98" ports="63,64,65,66,67,68,69,70,71,72,73,74,75,76" x="395.5" y="233.5"/>
+		<switch name="switch3" number="99" ports="77,78,79,80,81,82,83,84,85,86,87,88,89,90" x="311.5" y="307.5"/>
+		<switch name="switch4" number="100" ports="91,92,93,94,95,96,97,98,99,100,101,102,103,104" x="232.5" y="240.5"/>
+		<switch name="switch5" number="101" ports="105,106,107,108" x="347.5" y="201.5"/>
+		<switch name="switch6" number="102" ports="109,110,111,112" x="348.5" y="268.5"/>
+		<switch name="switch7" number="103" ports="113,114,115,116" x="271.5" y="272.5"/>
+		<switch name="switch8" number="104" ports="117,118,119,120" x="274.5" y="209.5"/>
+		<link capacity="125000" from="49" fromType="0" to="1" toType="0"/>
+		<link capacity="125000" from="50" fromType="0" to="2" toType="0"/>
+		<link capacity="125000" from="51" fromType="0" to="3" toType="0"/>
+		<link capacity="125000" from="52" fromType="0" to="4" toType="0"/>
+		<link capacity="125000" from="53" fromType="0" to="5" toType="0"/>
+		<link capacity="125000" from="54" fromType="0" to="6" toType="0"/>
+		<link capacity="125000" from="55" fromType="0" to="7" toType="0"/>
+		<link capacity="125000" from="56" fromType="0" to="8" toType="0"/>
+		<link capacity="125000" from="57" fromType="0" to="9" toType="0"/>
+		<link capacity="125000" from="58" fromType="0" to="10" toType="0"/>
+		<link capacity="125000" from="59" fromType="0" to="11" toType="0"/>
+		<link capacity="125000" from="60" fromType="0" to="12" toType="0"/>
+		<link capacity="125000" from="63" fromType="0" to="13" toType="0"/>
+		<link capacity="125000" from="64" fromType="0" to="14" toType="0"/>
+		<link capacity="125000" from="65" fromType="0" to="15" toType="0"/>
+		<link capacity="125000" from="66" fromType="0" to="16" toType="0"/>
+		<link capacity="125000" from="67" fromType="0" to="17" toType="0"/>
+		<link capacity="125000" from="68" fromType="0" to="18" toType="0"/>
+		<link capacity="125000" from="69" fromType="0" to="19" toType="0"/>
+		<link capacity="125000" from="70" fromType="0" to="20" toType="0"/>
+		<link capacity="125000" from="71" fromType="0" to="21" toType="0"/>
+		<link capacity="125000" from="72" fromType="0" to="22" toType="0"/>
+		<link capacity="125000" from="73" fromType="0" to="23" toType="0"/>
+		<link capacity="125000" from="74" fromType="0" to="24" toType="0"/>
+		<link capacity="125000" from="77" fromType="0" to="25" toType="0"/>
+		<link capacity="125000" from="78" fromType="0" to="26" toType="0"/>
+		<link capacity="125000" from="79" fromType="0" to="27" toType="0"/>
+		<link capacity="125000" from="80" fromType="0" to="28" toType="0"/>
+		<link capacity="125000" from="81" fromType="0" to="29" toType="0"/>
+		<link capacity="125000" from="82" fromType="0" to="30" toType="0"/>
+		<link capacity="125000" from="83" fromType="0" to="31" toType="0"/>
+		<link capacity="125000" from="84" fromType="0" to="32" toType="0"/>
+		<link capacity="125000" from="85" fromType="0" to="33" toType="0"/>
+		<link capacity="125000" from="86" fromType="0" to="34" toType="0"/>
+		<link capacity="125000" from="87" fromType="0" to="35" toType="0"/>
+		<link capacity="125000" from="88" fromType="0" to="36" toType="0"/>
+		<link capacity="125000" from="91" fromType="0" to="37" toType="0"/>
+		<link capacity="125000" from="92" fromType="0" to="38" toType="0"/>
+		<link capacity="125000" from="93" fromType="0" to="39" toType="0"/>
+		<link capacity="125000" from="94" fromType="0" to="40" toType="0"/>
+		<link capacity="125000" from="95" fromType="0" to="41" toType="0"/>
+		<link capacity="125000" from="96" fromType="0" to="42" toType="0"/>
+		<link capacity="125000" from="97" fromType="0" to="43" toType="0"/>
+		<link capacity="125000" from="98" fromType="0" to="44" toType="0"/>
+		<link capacity="125000" from="99" fromType="0" to="45" toType="0"/>
+		<link capacity="125000" from="100" fromType="0" to="46" toType="0"/>
+		<link capacity="125000" from="101" fromType="0" to="47" toType="0"/>
+		<link capacity="125000" from="102" fromType="0" to="48" toType="0"/>
+		<link capacity="750000" from="61" fromType="0" to="105" toType="0" multi="6"/>
+		<link capacity="750000" from="75" fromType="0" to="109" toType="0" multi="6"/>
+		<link capacity="750000" from="89" fromType="0" to="113" toType="0" multi="6"/>
+		<link capacity="750000" from="103" fromType="0" to="117" toType="0" multi="6"/>
+		<link capacity="750000" from="62" fromType="0" to="118" toType="0" multi="6"/>
+		<link capacity="750000" from="76" fromType="0" to="106" toType="0" multi="6"/>
+		<link capacity="750000" from="90" fromType="0" to="110" toType="0" multi="6"/>
+		<link capacity="750000" from="104" fromType="0" to="114" toType="0" multi="6"/>
+		<link capacity="750000" from="107" fromType="0" to="111" toType="0" multi="6"/>
+		<link capacity="750000" from="112" fromType="0" to="115" toType="0" multi="6"/>
+		<link capacity="750000" from="116" fromType="0" to="119" toType="0" multi="6"/>
+		<link capacity="750000" from="120" fromType="0" to="108" toType="0" multi="6"/>
+	</resources>
+	<virtualLinks/>
+	<dataFlows>
+	</dataFlows>
+</afdxxml>
