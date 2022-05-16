@@ -7,20 +7,6 @@
 #include "algo.h"
 //#include "delay.h"
 
-std::vector<int> idxRange(int size, bool shuffle) {
-    std::vector<int> res;
-    res.reserve(size);
-    for(int i = 0; i < size; i++) {
-        res.push_back(i);
-    }
-    if(shuffle) {
-        for(int i = size - 1; i > 0; i--) {
-            std::swap(res[i], res[rand() % i]);
-        }
-    }
-    return res;
-}
-
 bool operator==(Error::ErrorType lhs, const Error& rhs) {
     return lhs == rhs.type;
 }
@@ -476,6 +462,7 @@ Error VlinkConfig::buildTasksOrder() {
     // build a set of delay tasks with false in_cycle values ("acyclic" tasks),
     // and save the order of filling false in_cycle values (this will be the delay computation order among acyclic delay tasks).
     std::vector<DelayTask*> tasksToVisit;
+    std::vector<DelayTask*> tasksToVisitNext;
     std::set<std::tuple<int, int, Device::elem_t>> tasksToVisitSet;
     size_t n_visited = 0;
     std::vector<DelayTask*> acyclicTasksOrder;
@@ -492,11 +479,9 @@ Error VlinkConfig::buildTasksOrder() {
             tasksToVisit.push_back(delayTask);
         }
     }
-    while(n_visited < tasksToVisit.size()) {
-        size_t size_frozen = tasksToVisit.size();
+    while(!tasksToVisit.empty()) {
         size_t acyclic_size_frozen = acyclicTasksOrder.size();
-        for(size_t i = n_visited; i < size_frozen; i++) {
-            auto delayTask = tasksToVisit[i];
+        for(auto delayTask: tasksToVisit) {
             if(!delayTask->in_cycle) {
                 continue;
             }
@@ -522,10 +507,12 @@ Error VlinkConfig::buildTasksOrder() {
             for(auto[_, curDelayTask]: delayTask->output_for) {
                 if(curDelayTask->in_cycle) {
                     tasksToVisitSet.insert(curDelayTask->id);
-                    tasksToVisit.push_back(curDelayTask);
+                    tasksToVisitNext.push_back(curDelayTask);
                 }
             }
         }
+        tasksToVisit = std::move(tasksToVisitNext);
+        tasksToVisitNext.clear();
     }
     bool acyclic = tasksToVisitSet.size() <= acyclicTasksOrder.size();
     if(!acyclic) {

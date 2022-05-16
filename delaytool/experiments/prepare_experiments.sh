@@ -9,15 +9,13 @@
 
 # result of running of this script is already included in the release in vlconfigs directory
 
-python generate_vls.py arch/2s4e.afdxxml               vlconfigs/msggen1 5 100 1000 1000000 10000 20000 20000 100000 1 3 123
-python generate_vls.py arch/2s4e2L.afdxxml             vlconfigs/msggen1 5 100 1000 1000000 10000 20000 20000 100000 1 3 123
-python generate_vls.py arch/3s12e.afdxxml              vlconfigs/msggen1 5 300 1000 1000000 10000 20000 20000 100000 1 3
-python generate_vls.py arch/rhomb.afdxxml              vlconfigs/msggen1 5 100 1000 1000000 10000 20000 20000 100000 1 3
-python generate_vls.py arch/double_reserve_alt.afdxxml vlconfigs/msggen1 5 100 1000 1000000 10000 20000 20000 100000 1 3
-python generate_vls.py arch/2s4e.afdxxml               vlconfigs/msggen2 5 100 1 4000 2 500 300 300 1 3
-python generate_vls.py arch/2s4e2L.afdxxml             vlconfigs/msggen2 5 100 1 4000 2 500 300 300 1 3 123
-python generate_vls.py arch/3s12e.afdxxml              vlconfigs/msggen2 5 300 1 4000 2 500 300 300 1 3
-python generate_vls.py arch/rhomb.afdxxml              vlconfigs/msggen2 5 100 1 4000 2 500 300 300 1 3
-python generate_vls.py arch/double_reserve_alt.afdxxml vlconfigs/msggen2 5 100 1 4000 2 500 300 300 1 3
-
-
+python generate_vls.py arch/2s-4e.afdxxml                     vlconfigs/msggen1 3 500 1000 1000000 10000 20000 20000 100000 1 3 123
+python generate_vls.py arch/3s-48e-4L.afdxxml                 vlconfigs/msggen1 3 500 1000 1000000 10000 20000 20000 100000 1 3 123
+python generate_vls.py arch/diamond-48e-4L.afdxxml            vlconfigs/msggen1 3 500 1000 1000000 10000 20000 20000 100000 1 3 123
+python generate_vls.py arch/double_reserve_mod-48e-6L.afdxxml vlconfigs/msggen1 3 500 1000 1000000 10000 20000 20000 100000 1 3 123
+python generate_vls.py arch/6s-54e-3L.afdxxml                 vlconfigs/msggen1 3 500 1000 1000000 10000 20000 20000 100000 1 3 123
+python generate_vls.py arch/2s-4e.afdxxml                     vlconfigs/msggen2 3 500 1 4000 2 500 300 300 1 3 123
+python generate_vls.py arch/3s-48e-4L.afdxxml                 vlconfigs/msggen2 3 500 1 4000 2 500 300 300 1 3 123
+python generate_vls.py arch/diamond-48e-4L.afdxxml            vlconfigs/msggen2 3 500 1 4000 2 500 300 300 1 3 123
+python generate_vls.py arch/double_reserve_mod-48e-6L.afdxxml vlconfigs/msggen2 3 500 1 4000 2 500 300 300 1 3 123
+python generate_vls.py arch/6s-54e-3L.afdxxml                 vlconfigs/msggen2 3 500 1 4000 2 500 300 300 1 3 123

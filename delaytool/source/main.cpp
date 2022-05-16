@@ -59,6 +59,11 @@ int main(int argc, char* argv[]) {
             .default_value(false)
             .help("print verbose info about CIOQ mapping of input queues and fabrics");
 
+    program.add_argument("--nocalc")
+            .implicit_value(true)
+            .default_value(false)
+            .help("don't calculate delays or build CIOQ mapping");
+
     program.add_argument("-j", "--jitdef")
             .action([](const std::string& value) { return std::stof(value); })
             .default_value(static_cast<float>(jitStartDefault))
@@ -104,6 +109,7 @@ int main(int argc, char* argv[]) {
     bool printConfig = program.get<bool>("--printconfig");
     bool printDelays = program.get<bool>("--printdelays");
     bool printCioq = program.get<bool>("--printcioq");
+    bool nocalc = program.get<bool>("--nocalc");
     uint64_t bpMaxIter = program.get<uint64_t>("--bpmaxit");
     uint64_t cyclicMaxIter = program.get<uint64_t>("--cycmaxit");
 
@@ -137,7 +143,9 @@ int main(int argc, char* argv[]) {
     auto bwStats = getStats(bwUsage);
     printf("bwUsage: min=%f, max=%f, mean=%f, var=%f\n",
            bwStats.min, bwStats.max, bwStats.mean, bwStats.var);
-
+    if(nocalc) {
+        return 0;
+    }
     try {
         Error cioqErr = config->buildTables(printCioq);
         if(cioqErr) {

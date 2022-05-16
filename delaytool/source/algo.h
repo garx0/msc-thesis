@@ -30,11 +30,6 @@ using CioqMapOwn = std::unique_ptr<CioqMap>;
 using PortsSubgraphOwn = std::unique_ptr<PortsSubgraph>;
 using QRTAOwn = std::unique_ptr<QRTA>;
 
-// returns shuffled {0, ..., size - 1} vector if shuffle=true, not shuffled otherwise
-// uses C random tools
-// shuffle used only for DeletePaths tool, not for delay calculation
-std::vector<int> idxRange(int size, bool shuffle);
-
 class Error {
 public:
     enum ErrorType {Success, Cycle, VoqOverload, BpTooLong, BpEndless, CyclicTooLong};

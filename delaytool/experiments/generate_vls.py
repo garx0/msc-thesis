@@ -35,18 +35,13 @@ f"usage: python {argv[0]} arch output_dir n_tests n_msgs msg_size_min msg_size_m
         x_ext = ".exe" if sys.platform.startswith("win") else ""
         designer_path = "AFDX_Designer/algo/AFDX_DESIGN" + x_ext
         delaytool_path = "../build/delaytool" + x_ext
-        deletepaths_path = "../build/deletepaths" + x_ext
 
         if not os.path.isfile(designer_path):
             print(f"{designer_path} is not found, find and build AFDX Designer first")
             return
-        
+
         if not os.path.isfile(delaytool_path):
             print(f"{delaytool_path} is not found, build delaytool first by running build.sh from its directory")
-            return
-
-        if not os.path.isfile(deletepaths_path):
-            print(f"{deletepaths_path} is not found, build delaytool first by running build.sh from its directory")
             return
 
         filename_vls = f"{dir_name}/{arch_name}_vls_{i}.afdxxml"
@@ -60,36 +55,11 @@ f"usage: python {argv[0]} arch output_dir n_tests n_msgs msg_size_min msg_size_m
         if not os.path.isfile(filename_vls):
             raise Exception("failed designing VL configuration")
 
-        filename_xml = f"{dir_name}/{arch_name}_vls_{i}.xml"
+        filename_xml = f"{dir_name}/{arch_name}_final_vls_{i}.xml"
         new_seed = random.randint(0, 1000000)
         convertformat(filename_vls, filename_xml, new_seed)
 
-        filename_xml_fix = f"{dir_name}/{arch_name}_final_vls_{i}.xml"
-        new_seed = random.randint(0, 1000000)
-        command = f"{deletepaths_path} {filename_xml} {filename_xml_fix} -r -s {new_seed}"
-        print(command)
-        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
-        process.communicate()
-        if not os.path.isfile(filename_xml_fix) or os.path.getsize(filename_xml_fix) == 0:
-            print("error: deletepaths didn't work, try changing seed or other parameters")
-            continue
-
-        filename_temp = f"{dir_name}/temp.xml"
-        command = f"{delaytool_path} {filename_xml_fix} {filename_temp} -s mock"
-        print(command)
-        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
-        for line in process.communicate():
-            print(line.decode('utf-8'), end='')
-
-        if not os.path.isfile(filename_temp) or os.path.getsize(filename_temp) == 0:
-            print("error: delay calculation is not ready, try changing seed or other parameters")
-            split = os.path.split(filename_xml_fix)
-            new_name = os.path.join(split[0], split[1].replace('final', 'fail'))
-            os.rename(filename_xml_fix, new_name)
-        else:
-            n_succ += 1
-    if os.path.isfile(filename_temp):
-        os.remove(filename_temp)
+        n_succ += 1
     print(f"{n_succ}/{n_tests} vl configurations created successfully")
 
 if __name__ == "__main__":
