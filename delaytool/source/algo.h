@@ -194,7 +194,6 @@ public:
     const type_t type;
 
     std::map<int, PortOwn> ports; // input ports
-//    std::map<int, Port*> outPorts; // input ports connected to this device's output ports
     std::vector<Vlink*> sourceFor; // Vlinks which have this device as source
 
     CioqMapOwn cioqMap;
@@ -290,10 +289,8 @@ public:
     // key is <element type, branchId>, where branchId == vnodeX->in->id, where vnodeX in this->next
     std::map<std::pair<Device::elem_t, int>, DelayTaskOwn> delayTasks;
 
-    // e2e-delay, used only if this->device->schemeName == Device::Dst
+    // e2e delay
     DelayData e2e;
-
-    Error calcE2e();
 
     // portId is id of an input port in another device
     Vnode* selectNext(int portId) const;
@@ -302,9 +299,6 @@ public:
     std::vector<const Vnode*> getAllDests() const;
 
 private:
-    // prepare input delay data for calculation of delay of this vnode AND calculate this delay
-//    Error prepareCalc();
-
     // recursive helper function for getAllDests()
     void _getAllDests(std::vector<const Vnode*>& vec) const;
 };
@@ -447,16 +441,6 @@ inline int64_t numPacketsUp(int64_t interval, int64_t bag, int64_t jit) {
 // round x to a next multiple of k
 inline int64_t roundToMultiple(int64_t x, int64_t k) {
     return x + k * (x % k != 0) - x % k;
-}
-
-inline std::string OqOverloadVerbose(Vlink* vl, Device* device) {
-    return std::string("overload for vl ")
-           + std::to_string(vl->id)
-           + " of switch "
-           + std::to_string(device->id)
-           + " because busy period calculation took over "
-           + std::to_string(device->config->bpMaxIter)
-           + " iterations";
 }
 
 class QRTA

@@ -71,7 +71,6 @@ VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme,
                 return nullptr;
             }
             int number = std::stoi(res->Attribute("number"));
-//            printf("end system %s, id = %d\n", res->Attribute("name"), number); // DEBUG
             config->_portDevice[ports[0]] = number;
             config->devices[number] = std::make_unique<Device>(config.get(), Device::End, number);
             portNums[number] = ports;
@@ -81,7 +80,6 @@ VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme,
              res != nullptr;
              res = res->NextSiblingElement("switch")) {
             int number = std::stoi(res->Attribute("number"));
-//            printf("switch %s, id = %d\n", res->Attribute("name"), number); // DEBUG
             std::vector<int> ports = TokenizeCsv(res->Attribute("ports"));
             for(auto portId: ports) {
                 config->_portDevice[portId] = number;
@@ -219,32 +217,7 @@ void DebugInfo(const VlinkConfig* config) {
         printf("\n");
     }
     printf("\n");
-//    for(auto device: config->getAllDevices()) {
-//        printf("device %d:\n", device->id);
-//        for(auto port: device->getAllPorts()) {
-//            printf("\tinput port %d:", port->id);
-//            auto inVnodes = port->getAllVnodes();
-//            printf(" %ld vls:", inVnodes.size());
-//            if(!inVnodes.empty()) {
-//                printf(" vl");
-//                for(auto vnode: inVnodes) {
-//                    printf(" %d", vnode->vl->id);
-//                }
-//            }
-//            printf("\n");
-//            printf("\toutput port %d:", port->id);
-//            auto outVnodes = device->fromOutPort(port->id)->getAllVnodes();
-//            printf(" %ld vls:", outVnodes.size());
-//            if(!outVnodes.empty()) {
-//                printf(" vl");
-//                for(auto vnode: outVnodes) {
-//                    printf(" %d", vnode->vl->id);
-//                }
-//            }
-//            printf("\n");
-//        }
-//    }
-//    printf("\n");
+
     printf("vls through ports of devices:\n");
     for(auto device: config->getAllDevices()) {
         if(device->type == Device::Switch) {

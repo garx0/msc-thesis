@@ -2,10 +2,8 @@
 #include <cstdio>
 #include <vector>
 #include <cmath>
-//#include <random>
 #include <algorithm>
 #include "algo.h"
-//#include "delay.h"
 
 bool operator==(Error::ErrorType lhs, const Error& rhs) {
     return lhs == rhs.type;
@@ -384,7 +382,6 @@ Error VlinkConfig::_buildDelayTasksOQ() {
                 auto vnode = vnode_next->prev;
                 auto device = vnode->device;
                 // device is either a SOURCE end system or a switch
-//                printf("device %d, psout %d\n", vnode->device->id, vnode_next->in->id);
                 int out_pseudo_id = vnode_next->in->id;
                 QRTA* qrta_p = nullptr;
                 if(device->type == Device::Switch) {
@@ -516,10 +513,10 @@ Error VlinkConfig::buildTasksOrder() {
     }
     bool acyclic = tasksToVisitSet.size() <= acyclicTasksOrder.size();
     if(!acyclic) {
-//        printf("%zu delay tasks found, but only %zu of them are not cyclic dependent!\n", tasksToVisitSet.size(), acyclicTasksOrder.size());
+//        printf("%zu delay tasks found, but only %zu of them are not cyclic dependent!\n", n_tasks, acyclicTasksOrder.size());
     } else {
         assert(tasksToVisitSet.size() == acyclicTasksOrder.size());
-//        printf("%zu delay tasks found, no cyclic dependencies\n", tasksToVisit.size());
+//        printf("%zu delay tasks found, no cyclic dependencies\n", n_tasks);
     }
 
 //    printf("acyclic tasks order:\n"); // DEBUG
@@ -570,11 +567,6 @@ Error VlinkConfig::buildTasksOrder() {
     }
 
     // assertions about acyclic and cyclic tasks sets
-//    printf("%d; %lu, %lu, %lu, %lu, %lu, %lu\n",
-//           n_tasks,
-//           tasksToVisit.size(), tasksToVisitSet.size(),
-//           acyclicTasksOrder.size(), acyclicTasksSet.size(),
-//           cyclicTasksToVisit.size(), cyclicTasksToVisitSet.size());
     assert(cyclicTasksToVisitSet.size() == cyclicTasksToVisit.size());
 
     for(auto delayTask: acyclicTasksOrder) {
@@ -605,9 +597,6 @@ Error VlinkConfig::buildTasksOrder() {
     }
     assert(acyclicTasksOrder.size() == acyclicTasksSet.size());
     assert(cyclicTasksToVisitSet.size() + acyclicTasksSet.size() == static_cast<uint64_t>(n_tasks));
-//    printf("%lu + %lu = %lu >= %lu ?\n",
-//           cyclicTasksToVisitSet.size(), acyclicTasksSet.size(),
-//           cyclicTasksToVisitSet.size() + acyclicTasksSet.size(), tasksToVisitSet.size());
 
     // label each cyclic task with maximum cyclic layer among its input tasks (max_input_layer),
     // and sort cyclic tasks by max_input_layer
@@ -698,12 +687,8 @@ Error VlinkConfig::calcDelays(bool print) {
 
     // calculating max delays that are computable in one iteration
     for(auto delayTask: acyclicTasksOrder) {
-//        printf("get input data...\n");
         delayTask->get_input_data();
-//        printf("get input data done\n");
-//        printf("calc delay max...\n");
         Error err = delayTask->calc_delay_max();
-//        printf("calc delay max done\n");
         if(err) {
             return err;
         }
@@ -863,12 +848,6 @@ Error DelayTask::calc_delay_init() {
         dmin = vl->smin;
         dmax = vl->smax + vl->jit0b;
     } else {
-//        printf("i am vl %d psout %d (%s), find input for vl %d to psout %d. inputs are:\n", vl->id, out_pseudo_id,
-//               elem == Device::F ? "F" : "P", vl->id, out_pseudo_id);
-//        for(auto [vlBranch, curDelayTask]: inputs) {
-//            auto [cur_vl_id, cur_out_psid] = vlBranch; // DEBUG
-//            printf("vl %d to psout %d,\n", cur_vl_id, cur_out_psid); // DEBUG
-//        }
         auto found = inputs.find({vl->id, out_pseudo_id});
         assert(found != inputs.end());
         auto prevDelayTask = found->second;
@@ -942,12 +921,10 @@ void CioqMap::setMap(const std::map<int, std::map<int, int>>& _queueTable, const
     auto device_port_ids = device->getAllPortIds();
     for(auto in_id: device_port_ids) {
         for(int queue_id = 0; queue_id < n_queues; queue_id++) {
-//            printf("in %d queue %d, find any output port from this input queue\n", in_id, queue_id);
             // find any output port from this input queue with any vlinks to this output port
             int out_pseudo_id = -1;
             for(auto cur_out_id: device_port_ids) {
                 int cur_out_pseudo_id = config->connectedPort(cur_out_id);
-//                printf("getQueueId(%d -> %d (non-pseudo: %d)) == queue %d ?\n", in_id, cur_out_pseudo_id, cur_out_id, queue_id); // DEBUG
                 if(getQueueId(in_id, cur_out_pseudo_id) == queue_id &&
                     device->hasVlinks(in_id, cur_out_pseudo_id))
                 {
@@ -958,12 +935,9 @@ void CioqMap::setMap(const std::map<int, std::map<int, int>>& _queueTable, const
             if(out_pseudo_id == -1) {
                 continue;
             }
-//            printf("in %d queue %d, found out_pseudo_id = %d\n", in_id, queue_id, out_pseudo_id);
             auto found = compsIndex.find({in_id, out_pseudo_id});
             if(found != compsIndex.end()) {
                 continue;
-            } else {
-//                printf("no comps yet build with edge %d -> %d\n", in_id, out_pseudo_id);
             }
             auto comp_edges = buildComp(in_id, queue_id);
             if(comp_edges.empty()) {
@@ -971,23 +945,9 @@ void CioqMap::setMap(const std::map<int, std::map<int, int>>& _queueTable, const
             }
             comps.push_back(std::make_unique<PortsSubgraph>(comps.size(), comp_edges));
             PortsSubgraph* comp = comps[comps.size()-1].get();
-//            printf("for i %d, j_ps %d (q %d): built comp %d\n", in_id, out_pseudo_id, queue_id, comp->id); // DEBUG
             std::set<std::pair<int, int>> comp_queues;
             for(auto edge: comp_edges) {
-//                int fabric2 = getFabricIdByEdge(edge.first, edge.second);
-//                printf("edge %d -> %d\n", edge.first, edge.second); // DEBUG
                 assert(compsIndex.find(edge) == compsIndex.end());
-                // DEBUG:
-//                if(compsIndex.find(edge) != compsIndex.end()) {
-//                    int fabric1;
-//                    auto comp_other = compsIndex.find(edge)->second;
-//                    printf("this edge is intersecting with comp %d\n", comp_other->id);
-//                    for(auto edge1: comp_other->edges) {
-//                        fabric1 = getFabricIdByEdge(edge1.first, edge1.second);
-//                        break;
-//                    }
-//                    assert(fabric1 == fabric2);
-//                }
                 compsIndex[edge] = comp;
             }
         }
@@ -996,22 +956,12 @@ void CioqMap::setMap(const std::map<int, std::map<int, int>>& _queueTable, const
     // DEBUG assertions about compsIndex
     for(auto in_id: device_port_ids) {
         for(auto out_id: device_port_ids) {
-//            printf("cycle iteration %d %d\n", in_id, out_id);
             int out_pseudo_id = config->connectedPort(out_id);
-//            printf("or %d %d\n", in_id, out_pseudo_id);
             if(compsIndex.find({in_id, out_pseudo_id}) == compsIndex.end()) {
-//                printf("not found a comp for edge %d -> %d\n", in_id, out_pseudo_id); // DEBUG
                 if(device->hasVlinks(in_id, out_pseudo_id)) {
-//                    printf("building comp for %d -> %d\n", in_id, out_pseudo_id); // DEBUG
                     auto comp_edges = buildComp(in_id, getQueueId(in_id, out_pseudo_id));
-//                    printf("for i %d, j_ps %d: built comp (again)\n", in_id, out_pseudo_id); // DEBUG
-//                    for(auto edge: comp_edges) {
-//                        printf("edge %d -> %d\n", edge.first, edge.second); // DEBUG
-//                    }
                     assert(comp_edges.empty());
                 }
-            } else {
-//                printf("found a comp for edge %d -> %d\n", in_id, out_pseudo_id); // DEBUG
             }
         }
     }
