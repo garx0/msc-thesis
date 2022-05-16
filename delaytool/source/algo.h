@@ -37,7 +37,7 @@ std::vector<int> idxRange(int size, bool shuffle);
 
 class Error {
 public:
-    enum ErrorType {Success, Cycle, VoqOverload, BpTooLong, CyclicTooLong};
+    enum ErrorType {Success, Cycle, VoqOverload, BpTooLong, BpEndless, CyclicTooLong};
 
     Error(ErrorType type = Success, const std::string& verbose = "", const std::string& verboseRaw = "")
         : type(type), verbose(verbose), verboseRaw(verboseRaw) {}
@@ -68,6 +68,8 @@ public:
                 return "VoqOverload";
             case BpTooLong:
                 return "BpTooLong";
+            case BpEndless:
+                return "BpEndless";
             case CyclicTooLong:
                 return "CyclicTooLong";
         }
@@ -122,6 +124,7 @@ public:
     int n_queues;
     uint64_t bpMaxIter;
     uint64_t cyclicMaxIter;
+    int n_tasks;
 
     std::vector<DelayTask*> tasks;
     std::vector<DelayTask*> acyclicTasksOrder;
@@ -145,7 +148,7 @@ public:
     // prints delays if print=true
     Error calcDelays(bool print = false);
 
-    Error buildTables();
+    Error buildTables(bool print = false);
 
     // calculate bwUsage() values on all input ports and return them as map by port number
     std::map<int, double> bwUsage();
@@ -155,6 +158,8 @@ public:
     double linkByte2ms(int64_t linkByte) { return static_cast<double>(linkByte) / linkRate; }
 private:
     Error buildDelayTasks();
+    Error _buildDelayTasksCIOQ();
+    Error _buildDelayTasksOQ();
 
     Error buildTasksOrder();
 };
@@ -218,7 +223,7 @@ public:
 
     bool hasVlinks(int in_port_id, int out_port_pseudo_id) const;
 
-    std::vector<Vnode*> getVlinks(int in_port_id, int out_port_id) const;
+    std::vector<Vnode*> getVlinks(int in_port_id, int out_port_pseudo_id) const;
 };
 
 // INPUT PORT
@@ -251,14 +256,12 @@ public:
 class DelayData
 {
 public:
-    DelayData(): _vl(nullptr), _vnode_next(nullptr), _dmin(-2), _jit(-1), _dmax(-1), _ready(false) {} // TODO remove vnode_next field later
-    DelayData(Vlink* vl, Vnode* vnode_next, int64_t dmin, int64_t jit): _vl(vl), _vnode_next(vnode_next), _dmin(dmin), _jit(jit), _dmax(dmin + jit), _ready(true) {}
+    explicit DelayData(): _vl(nullptr), _dmin(-2), _jit(-1), _dmax(-1), _ready(false) {}
+    explicit DelayData(Vlink* vl, int64_t dmin, int64_t jit): _vl(vl), _dmin(dmin), _jit(jit), _dmax(dmin + jit), _ready(true) {}
 
     bool ready() const { return _ready; }
 
     Vlink* vl() const { return _vl; }
-
-    Vnode* vnode_next() const { return _vnode_next; }
 
     int64_t dmin() const { return _ready ? _dmin : -1; }
 
@@ -268,7 +271,6 @@ public:
 
 private:
     Vlink* _vl;
-    Vnode* _vnode_next;
     int64_t _dmin;
     int64_t _jit;
     int64_t _dmax;
@@ -312,20 +314,21 @@ private:
     void _getAllDests(std::vector<const Vnode*>& vec) const;
 };
 
-// delay for packets of a VL from generation to leaving a network element
+// delay for packets of a VL from generation to leaving a network element.
 // destination output port of a VL in a device containing this network element is specified
-// (but in form of vnode of this VL in the input port connected with this output port)
+// (but in form of vnode of this VL in the input port connected with this output port).
+// type of the network element is either fabric (Device::F) or output port (Device::P).
 class DelayTask
 {
 public:
-    // type of element
-
     explicit DelayTask(Vlink* vl, Vnode* vnode_next, Device::elem_t elem, QRTA* qrta)
             : config(vl->config), vl(vl), vnode(vnode_next->prev), vnode_next(vnode_next),
               device(vnode_next->prev->device),
-              elem(elem), in_id(vnode_next->prev->in->id), out_pseudo_id(vnode_next->in->id),
+              elem(elem),
+              in_id(vnode_next->prev->in != nullptr ? vnode_next->prev->in->id : -1),
+              out_pseudo_id(vnode_next->in->id),
               id(std::make_tuple(vl->id, vnode_next->in->id, elem)),
-              qrta(qrta), delay(vl, vnode_next, 0, 0),
+              qrta(qrta), delay(vl, 0, 0),
               in_cycle(true), iter(0), cyclic_layer(-1), max_input_layer(-1) {}
 
     VlinkConfig* const config;
@@ -333,7 +336,7 @@ public:
     Vnode* const vnode;
     Vnode* const vnode_next;
     Device* const device;
-    Device::elem_t const elem;
+    Device::elem_t const elem; // type of the network element: fabric (Device::F) or output port (Device::P)
     int const in_id; // input port id
     int const out_pseudo_id; // output port pseudo id
     std::tuple<int, int, Device::elem_t> const id; // elem, vl->id, out_pseudo_id
@@ -367,8 +370,6 @@ public:
     void clear_bp();
     Error calc_delay_init();
     Error calc_delay_max();
-
-//    static DelayData getFromMap(int vl, int next_port, const std::map<std::pair<int, int>, DelayData>& delaysMap);
 };
 
 class CioqMap
@@ -394,7 +395,9 @@ public:
     // in_port_id, out_port_pseudo_id -> PortsSubgraph
     std::map<std::pair<int, int>, PortsSubgraph*> compsIndex;
 
-    void setMap(const std::map<int, std::map<int, int>>& _queueTable, const std::map<std::pair<int, int>, int>& _fabricTable);
+    void setMap(const std::map<int, std::map<int, int>>& _queueTable,
+                const std::map<std::pair<int, int>, int>& _fabricTable,
+                bool print = false);
 
     int getQueueId(int in_port_id, int out_port_id) const;
 
@@ -406,7 +409,7 @@ public:
     std::set<std::pair<int, int>> buildComp(int in_port_id, int queue_id) const;
 };
 
-void generateTableBasic(Device* device, int n_queues = 2, int n_fabrics = 8);
+void generateTableBasic(Device* device, int n_queues, int n_fabrics, bool print = false);
 
 // bipartite graph
 class PortsSubgraph
@@ -420,6 +423,79 @@ public:
     std::set<std::pair<int, int>> edges;
 
     bool isConnected(int node_in, int node_out) const;
+};
+
+// floor(x/y)
+inline int64_t floordiv(int64_t x, int64_t y) {
+    return x / y;
+}
+
+// ceil(x/y), x >= 0
+inline int64_t ceildiv(int64_t x, int64_t y) {
+    return x / y + (x % y != 0);
+}
+
+// = ceil(x/y + 0) = floor(x/y) + 1, x >= 0
+inline int64_t ceildiv_up(int64_t x, int64_t y) {
+    return x / y + 1;
+}
+
+inline int64_t numPackets(int64_t interval, int64_t bag, int64_t jit) {
+    return ceildiv(interval + jit, bag);
+}
+
+// = numPackets(interval+0, ...) (limit from above)
+inline int64_t numPacketsUp(int64_t interval, int64_t bag, int64_t jit) {
+    return ceildiv_up(interval + jit, bag);
+}
+
+// round x to a next multiple of k
+inline int64_t roundToMultiple(int64_t x, int64_t k) {
+    return x + k * (x % k != 0) - x % k;
+}
+
+inline std::string OqOverloadVerbose(Vlink* vl, Device* device) {
+    return std::string("overload for vl ")
+           + std::to_string(vl->id)
+           + " of switch "
+           + std::to_string(device->id)
+           + " because busy period calculation took over "
+           + std::to_string(device->config->bpMaxIter)
+           + " iterations";
+}
+
+class QRTA
+{
+public:
+    QRTA(VlinkConfig* config): config(config), bp(-1) {}
+
+    // == Rk,CVL(t) - Jk, k == vl->id
+    int64_t delayFunc(int64_t t, Vlink* vl, int cur_branch_id) const;
+
+    // == Rk,CVL(q)* - Jk, k == vl->id
+    int64_t delayFuncRem(int q, Vlink* vl, int cur_branch_id) const;
+
+    Error calc_bp();
+
+    DelayData calc_result;
+
+    void setInDelays(const std::map<std::pair<int, int>, DelayData>& _inDelays) {
+        inDelays = _inDelays;
+    }
+
+    // recalculates bp only if it is empty
+    Error calc(Vlink* curVl, int cur_branch_id);
+
+    Error clear_bp();
+
+    double total_rate();
+
+private:
+    VlinkConfig* config;
+    int64_t bp;
+    std::map<std::pair<int, int>, DelayData> inDelays;
+
+    static int64_t busyPeriod(const std::map<std::pair<int, int>, DelayData>& inDelays, VlinkConfig* config);
 };
 
 #endif //DELAYTOOL_ALGO_H

@@ -25,7 +25,7 @@ int main(int argc, char* argv[]) {
 
     program.add_argument("-s", "--scheme")
             .help("scheme name: oq|cioq (default: cioq)")
-            .default_value(std::string("OqPacket"))
+            .default_value(std::string("CIOQ"))
             .action([](const std::string& value) {
                 static const std::map<std::string, std::string> mapping = {
                         {"oq", "OQ"},
@@ -39,10 +39,10 @@ int main(int argc, char* argv[]) {
                 }
             });
 
-//    program.add_argument("--nfabrics")
-//            .help("clock period for VOQ scheme")
-//            .action([](const std::string& value) { return std::stoi(value); })
-//            .default_value(nFabricsDefault);
+    program.add_argument("--nfabrics")
+            .help("clock period for VOQ scheme")
+            .action([](const std::string& value) { return std::stoi(value); })
+            .default_value(nFabricsDefault);
 
     program.add_argument("--printconfig")
             .implicit_value(true)
@@ -53,6 +53,11 @@ int main(int argc, char* argv[]) {
             .implicit_value(true)
             .default_value(false)
             .help("print calculated E2E delays");
+
+    program.add_argument("--printcioq")
+            .implicit_value(true)
+            .default_value(false)
+            .help("print verbose info about CIOQ mapping of input queues and fabrics");
 
     program.add_argument("-j", "--jitdef")
             .action([](const std::string& value) { return std::stof(value); })
@@ -71,14 +76,14 @@ int main(int argc, char* argv[]) {
 
     program.add_argument("--bpmaxit")
             .action([](const std::string& value) { return static_cast<uint64_t>(std::stof(value)); })
-            .default_value(static_cast<uint64_t>(100000))
+            .default_value(static_cast<uint64_t>(bpMaxIterDefault))
             .help(std::string("max number of iterations of calculating busy period.\n")
                   + "its calculation won't be endless because its parameters are checked for a sign of this earlier,"
                   + "but it may take too long. set 0 for no restrictions.");
 
     program.add_argument("--cycmaxit")
             .action([](const std::string& value) { return static_cast<uint64_t>(std::stof(value)); })
-            .default_value(static_cast<uint64_t>(100000))
+            .default_value(static_cast<uint64_t>(cyclicMaxIterDefault))
             .help(std::string("max number of iterations for calculating delays if the data dependencies are cyclic.\n")
                   + "set 0 for no restrictions.");
 
@@ -94,9 +99,11 @@ int main(int argc, char* argv[]) {
     std::string scheme = program.get<std::string>("--scheme");
     float startJitDefault = program.get<float>("--jitdef");
     int forceLinkRate = program.get<int>("--rate");
+    int nFabrics = program.get<int>("--nfabrics");
     float sizeFactor = program.get<float>("--factor");
     bool printConfig = program.get<bool>("--printconfig");
     bool printDelays = program.get<bool>("--printdelays");
+    bool printCioq = program.get<bool>("--printcioq");
     uint64_t bpMaxIter = program.get<uint64_t>("--bpmaxit");
     uint64_t cyclicMaxIter = program.get<uint64_t>("--cycmaxit");
 
@@ -112,7 +119,7 @@ int main(int argc, char* argv[]) {
         return 0;
     }
     VlinkConfigOwn config = fromXml(doc, scheme,
-            startJitDefault, forceLinkRate, sizeFactor, bpMaxIter, cyclicMaxIter);
+            startJitDefault, forceLinkRate, sizeFactor, bpMaxIter, cyclicMaxIter, nFabrics);
     if(config == nullptr) {
         fprintf(stderr, "error reading from xml\n");
         fclose(fpOut);
@@ -132,9 +139,9 @@ int main(int argc, char* argv[]) {
            bwStats.min, bwStats.max, bwStats.mean, bwStats.var);
 
     try {
-        Error cioqErr = config->buildTables();
+        Error cioqErr = config->buildTables(printCioq);
         if(cioqErr) {
-            fprintf(stderr, "error calculating delay because of invalid VL configuration: %s, %s\n",
+            fprintf(stderr, "error building VIQ/fabrics mapping: %s, %s\n",
                     cioqErr.TypeString().c_str(), cioqErr.Verbose().c_str());
             fclose(fpOut);
             return 0;
@@ -146,7 +153,7 @@ int main(int argc, char* argv[]) {
     try {
         Error calcErr = config->calcDelays(printDelays);
         if(calcErr) {
-            fprintf(stderr, "error calculating delay because of invalid VL configuration: %s, %s\n",
+            fprintf(stderr, "error calculating delay, can't calculate delays on this network configuration: %s, %s\n",
                     calcErr.TypeString().c_str(), calcErr.Verbose().c_str());
             fclose(fpOut);
             return 0;

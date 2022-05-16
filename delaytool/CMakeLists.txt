@@ -7,5 +7,5 @@ add_definitions(-Wall)
 
 add_library(tinyxml2 STATIC source/tinyxml2/tinyxml2.cpp)
 
-add_executable(delaytool source/main.cpp source/algo.cpp source/configio.cpp source/delay.cpp)
+add_executable(delaytool source/main.cpp source/algo.cpp source/configio.cpp)
 target_link_libraries(delaytool tinyxml2)

@@ -25,7 +25,7 @@ std::vector<int> TokenizeCsv(const std::string& str) {
 // doc can be modified. it will be used when exporting config to xml with new data
 VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme,
         double jitDefaultValue, int forceLinkRate,
-        double loadFactor, uint64_t bpMaxIter, uint64_t cyclicMaxIter)
+        double loadFactor, uint64_t bpMaxIter, uint64_t cyclicMaxIter, int nFabrics)
 {
     VlinkConfigOwn config = std::make_unique<VlinkConfig>();
     try {
@@ -35,9 +35,12 @@ VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme,
                            ? static_cast<int64_t>(
                                    std::stof(resources->FirstChildElement("link")->Attribute("capacity")))
                            : forceLinkRate;
-        config->n_fabrics = 8;
+        config->n_fabrics = nFabrics;
         config->n_queues = 2;
+        assert(nFabrics % config->n_queues == 0);
+        assert(nFabrics > 0);
         config->scheme = scheme;
+        assert(scheme == "OQ" || scheme == "CIOQ");
         config->bpMaxIter = bpMaxIter;
         config->cyclicMaxIter = cyclicMaxIter;
 
@@ -68,6 +71,7 @@ VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme,
                 return nullptr;
             }
             int number = std::stoi(res->Attribute("number"));
+//            printf("end system %s, id = %d\n", res->Attribute("name"), number); // DEBUG
             config->_portDevice[ports[0]] = number;
             config->devices[number] = std::make_unique<Device>(config.get(), Device::End, number);
             portNums[number] = ports;
@@ -77,6 +81,7 @@ VlinkConfigOwn fromXml(tinyxml2::XMLDocument& doc, const std::string& scheme,
              res != nullptr;
              res = res->NextSiblingElement("switch")) {
             int number = std::stoi(res->Attribute("number"));
+//            printf("switch %s, id = %d\n", res->Attribute("name"), number); // DEBUG
             std::vector<int> ports = TokenizeCsv(res->Attribute("ports"));
             for(auto portId: ports) {
                 config->_portDevice[portId] = number;
@@ -214,29 +219,80 @@ void DebugInfo(const VlinkConfig* config) {
         printf("\n");
     }
     printf("\n");
+//    for(auto device: config->getAllDevices()) {
+//        printf("device %d:\n", device->id);
+//        for(auto port: device->getAllPorts()) {
+//            printf("\tinput port %d:", port->id);
+//            auto inVnodes = port->getAllVnodes();
+//            printf(" %ld vls:", inVnodes.size());
+//            if(!inVnodes.empty()) {
+//                printf(" vl");
+//                for(auto vnode: inVnodes) {
+//                    printf(" %d", vnode->vl->id);
+//                }
+//            }
+//            printf("\n");
+//            printf("\toutput port %d:", port->id);
+//            auto outVnodes = device->fromOutPort(port->id)->getAllVnodes();
+//            printf(" %ld vls:", outVnodes.size());
+//            if(!outVnodes.empty()) {
+//                printf(" vl");
+//                for(auto vnode: outVnodes) {
+//                    printf(" %d", vnode->vl->id);
+//                }
+//            }
+//            printf("\n");
+//        }
+//    }
+//    printf("\n");
+    printf("vls through ports of devices:\n");
     for(auto device: config->getAllDevices()) {
-        printf("device %d:\n", device->id);
-        for(auto port: device->getAllPorts()) {
-            printf("\tinput port %d:", port->id);
-            auto inVnodes = port->getAllVnodes();
-            printf(" %ld vls:", inVnodes.size());
-            if(!inVnodes.empty()) {
-                printf(" vl");
-                for(auto vnode: inVnodes) {
-                    printf(" %d", vnode->vl->id);
+        if(device->type == Device::Switch) {
+            printf("switch %d:\n", device->id);
+            for(auto in: device->getAllPorts()) {
+                for(auto out_in: device->getAllOutPortsIn()) {
+                    printf("\tin %d -> out %d / in %d --",
+                           in->id, out_in->outPrev, out_in->id);
+                    auto vnodes = device->getVlinks(in->id, out_in->id);
+                    printf(" %ld vls:", vnodes.size());
+                    if(!vnodes.empty()) {
+                        printf(" vl");
+                        for(auto vnode: vnodes) {
+                            printf(" %d", vnode->vl->id);
+                        }
+                    }
+                    printf("\n");
                 }
             }
-            printf("\n");
-            printf("\toutput port %d:", port->id);
-            auto outVnodes = device->fromOutPort(port->id)->getAllVnodes();
-            printf(" %ld vls:", outVnodes.size());
-            if(!outVnodes.empty()) {
-                printf(" vl");
-                for(auto vnode: outVnodes) {
-                    printf(" %d", vnode->vl->id);
+        } else {
+            // end system
+            printf("end system %d:\n", device->id);
+            for(auto in: device->getAllPorts()) {
+                printf("\tto in %d --",
+                       in->id);
+                auto vnodes = in->getAllVnodes();
+                printf(" %ld vls:", vnodes.size());
+                if(!vnodes.empty()) {
+                    printf(" vl");
+                    for(auto vnode: vnodes) {
+                        printf(" %d", vnode->vl->id);
+                    }
                 }
+                printf("\n");
             }
-            printf("\n");
+            for(auto out_in: device->getAllOutPortsIn()) {
+                printf("\tfrom out %d / in %d --",
+                       out_in->outPrev, out_in->id);
+                auto vnodes = device->fromOutPort(out_in->outPrev)->getAllVnodes();
+                printf(" %ld vls:", vnodes.size());
+                if(!vnodes.empty()) {
+                    printf(" vl");
+                    for(auto vnode: vnodes) {
+                        printf(" %d", vnode->vl->id);
+                    }
+                }
+                printf("\n");
+            }
         }
     }
     printf("\n");
